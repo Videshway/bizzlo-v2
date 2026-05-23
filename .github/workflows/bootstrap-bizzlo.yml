@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - bizzlo-source.tar.gz.b64
+      - bizzlo-source-clean.tar.gz.b64
       - .github/workflows/bootstrap-bizzlo.yml
   workflow_dispatch:
 
@@ -19,14 +19,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Unpack clean Bizzlo source
         run: |
-          if [ ! -f bizzlo-source.tar.gz.b64 ]; then
-            echo "No source payload yet; nothing to unpack."
+          if [ ! -f bizzlo-source-clean.tar.gz.b64 ]; then
+            echo "No clean source payload yet; nothing to unpack."
             exit 0
           fi
-          base64 -d bizzlo-source.tar.gz.b64 > /tmp/bizzlo-source.tar.gz
+          base64 -d bizzlo-source-clean.tar.gz.b64 > /tmp/bizzlo-source.tar.gz
           tar -xzf /tmp/bizzlo-source.tar.gz -C .
           find . -name '._*' -delete
-          rm -f bizzlo-source.tar.gz.b64
+          rm -f bizzlo-source-clean.tar.gz.b64 bizzlo-source.tar.gz.b64
       - name: Commit unpacked source
         run: |
           git config user.name "github-actions[bot]"
