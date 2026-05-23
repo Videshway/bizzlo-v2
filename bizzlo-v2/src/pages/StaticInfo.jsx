@@ -12,6 +12,16 @@ import { useAppState } from '../lib/appState';
 import { Badge, EmptyState, Modal, Panel, SelectInput, StatusBadge, TextInput } from '../components/ui';
 
 function downloadResource(resource) {
+  if (resource.file_url) {
+    const link = document.createElement('a');
+    link.href = resource.file_url;
+    link.download = resource.filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    return;
+  }
+
   const body = [
     `Bizzlo Resource: ${resource.title}`,
     `Category: ${resource.category}`,
@@ -33,23 +43,27 @@ function downloadResource(resource) {
 }
 
 function downloadCountryResource(resource) {
+  const isPresentation = resource.type === 'PPT';
   const body = [
-    `Bizzlo Resource: ${resource.title}`,
-    `Country: ${resource.country}`,
-    `Category: ${resource.category}`,
-    `Format: ${resource.type}`,
-    `Updated: ${resource.date}`,
-    `Size reference: ${resource.size}`,
-    '',
-    resource.summary,
-    '',
-    'Production note: replace this generated working copy with the final Videshway-owned PDF/PPT before public partner rollout.',
-  ].join('\n');
-  const blob = new Blob([body], { type: 'text/plain' });
+    isPresentation ? '<html><body>' : '',
+    isPresentation ? `<h1>${resource.title}</h1>` : `Bizzlo Resource: ${resource.title}`,
+    isPresentation ? `<h2>${resource.country} ${resource.category}</h2>` : `Country: ${resource.country}`,
+    isPresentation ? '<ul>' : `Category: ${resource.category}`,
+    isPresentation ? `<li>Updated: ${resource.date}</li>` : `Format: ${resource.type}`,
+    isPresentation ? `<li>Market: ${resource.market}</li>` : `Updated: ${resource.date}`,
+    isPresentation ? `<li>${resource.summary}</li>` : `Size reference: ${resource.size}`,
+    isPresentation ? '<li>Use this deck for partner counseling, document collection, and student application readiness.</li>' : '',
+    isPresentation ? '</ul><h2>Workflow</h2><ol><li>Confirm student profile and destination fit.</li><li>Collect required documents.</li><li>Shortlist partner universities.</li><li>Move application to admin review.</li></ol></body></html>' : '',
+    isPresentation ? '' : '',
+    isPresentation ? '' : resource.summary,
+    isPresentation ? '' : '',
+    isPresentation ? '' : 'Production note: replace this generated working copy with the final Videshway-owned PDF/PPT before public partner rollout.',
+  ].filter(Boolean).join(isPresentation ? '' : '\n');
+  const blob = new Blob([body], { type: isPresentation ? 'application/vnd.ms-powerpoint' : 'text/plain' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = resource.filename.replace(/\.(pdf|ppt)$/i, '.txt');
+  link.download = isPresentation ? resource.filename : resource.filename.replace(/\.pdf$/i, '.txt');
   document.body.appendChild(link);
   link.click();
   link.remove();

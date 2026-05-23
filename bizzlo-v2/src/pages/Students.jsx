@@ -33,12 +33,21 @@ export function Students({ onNavigate }) {
   const [invite, setInvite] = useState(null);
   const [formError, setFormError] = useState('');
   const [form, setForm] = useState(emptyForm);
+  const availableCounselors = currentUser.role === 'admin'
+    ? counselors
+    : counselors.filter((user) => (
+      user.organization_id === currentUser.organization_id || user.manager_id === currentUser.id
+    ));
 
   const filtered = visibleStudents.filter((student) => {
     const haystack = `${student.first_name} ${student.last_name} ${student.email} ${student.discipline}`.toLowerCase();
     return haystack.includes(query.toLowerCase());
   });
-  const selectedCounselorId = form.counselor_id || counselors[0]?.id || '';
+  const selectedCounselorId = form.counselor_id || availableCounselors[0]?.id || '';
+
+  function updateForm(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -151,28 +160,39 @@ export function Students({ onNavigate }) {
 
       <Modal open={open} onClose={() => setOpen(false)} title="Create Student File" description="Create a complete student profile before applications and documents.">
         <form className="form-grid" onSubmit={handleSubmit}>
-          <TextInput label="First name" required value={form.first_name} onChange={(event) => setForm({ ...form, first_name: event.target.value })} />
-          <TextInput label="Last name" required value={form.last_name} onChange={(event) => setForm({ ...form, last_name: event.target.value })} />
-          <TextInput label="Email" type="email" required value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-          <TextInput label="Phone" type="tel" inputMode="tel" maxLength={16} required value={form.phone} onChange={(event) => setForm({ ...form, phone: normalizePhoneInput(form.nationality, event.target.value) })} />
-          <SelectInput label="Nationality" required value={form.nationality} onChange={(event) => setForm({ ...form, nationality: event.target.value, phone: normalizePhoneInput(event.target.value, form.phone) })}>
+          <TextInput label="First name" required value={form.first_name} onChange={(event) => updateForm('first_name', event.target.value)} />
+          <TextInput label="Last name" required value={form.last_name} onChange={(event) => updateForm('last_name', event.target.value)} />
+          <TextInput label="Email" type="email" required value={form.email} onChange={(event) => updateForm('email', event.target.value)} />
+          <TextInput label="Phone" type="tel" inputMode="tel" maxLength={16} required value={form.phone} onChange={(event) => {
+            const nextValue = event.target.value;
+            setForm((current) => ({ ...current, phone: normalizePhoneInput(current.nationality, nextValue) }));
+          }} />
+          <SelectInput label="Nationality" required value={form.nationality} onChange={(event) => {
+            const nextNationality = event.target.value;
+            setForm((current) => ({
+              ...current,
+              nationality: nextNationality,
+              phone: normalizePhoneInput(nextNationality, current.phone),
+            }));
+          }}>
             {nationalityOptions.map((item) => <option key={item}>{item}</option>)}
           </SelectInput>
-          <SelectInput label="Desired country" required value={form.desired_countries} onChange={(event) => setForm({ ...form, desired_countries: event.target.value })}>
+          <SelectInput label="Desired country" required value={form.desired_countries} onChange={(event) => updateForm('desired_countries', event.target.value)}>
             {countryOptions.map((item) => <option key={item}>{item}</option>)}
           </SelectInput>
-          <SelectInput label="Study level" required value={form.study_level} onChange={(event) => setForm({ ...form, study_level: event.target.value })}>
+          <SelectInput label="Study level" required value={form.study_level} onChange={(event) => updateForm('study_level', event.target.value)}>
             {studyLevelOptions.map((item) => <option key={item}>{item}</option>)}
           </SelectInput>
-          <SelectInput label="Discipline" required value={form.discipline} onChange={(event) => setForm({ ...form, discipline: event.target.value })}>
+          <SelectInput label="Discipline" required value={form.discipline} onChange={(event) => updateForm('discipline', event.target.value)}>
             {disciplineOptions.map((item) => <option key={item}>{item}</option>)}
           </SelectInput>
-          <SelectInput label="Intake" required value={form.intake} onChange={(event) => setForm({ ...form, intake: event.target.value })}>
+          <SelectInput label="Intake" required value={form.intake} onChange={(event) => updateForm('intake', event.target.value)}>
             {intakeOptions.map((item) => <option key={item}>{item}</option>)}
           </SelectInput>
           {currentUser.role === 'counselor' ? null : (
-            <SelectInput label="Counselor" required value={selectedCounselorId} onChange={(event) => setForm({ ...form, counselor_id: event.target.value })}>
-              {counselors.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
+            <SelectInput label="Counselor" required={availableCounselors.length > 0} value={selectedCounselorId} onChange={(event) => updateForm('counselor_id', event.target.value)}>
+              {availableCounselors.length === 0 ? <option value="">Assign later</option> : null}
+              {availableCounselors.map((user) => <option key={user.id} value={user.id}>{user.name}</option>)}
             </SelectInput>
           )}
           {formError ? <p className="form-error form-wide">{formError}</p> : null}

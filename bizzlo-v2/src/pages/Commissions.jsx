@@ -9,7 +9,7 @@ import {
 import { applicationStageAliases, paymentMilestones } from '../data/referenceWorkflow';
 import { useAppState } from '../lib/appState';
 import { labelFor, money } from '../lib/status';
-import { Badge, EmptyState, Panel, SelectInput, StatusBadge, TextInput } from '../components/ui';
+import { Badge, EmptyState, Modal, Panel, SelectInput, StatusBadge, TextInput } from '../components/ui';
 
 function csv(value) {
   return `"${String(value ?? '').replace(/"/g, '""')}"`;
@@ -161,6 +161,7 @@ export function Commissions() {
   const [paymentQuery, setPaymentQuery] = useState('');
   const [serviceTab, setServiceTab] = useState(alliedServiceRows[0].category);
   const [ruleRows, setRuleRows] = useState(commissionStructureRows);
+  const [tutorialOpen, setTutorialOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -220,11 +221,35 @@ export function Commissions() {
           <h1>Finance</h1>
           <p>Partner bank, GST, commission payment, and Videshway admin tracking for every submitted application.</p>
         </div>
-        <button className="secondary-button" type="button">
+        <button className="secondary-button" type="button" onClick={() => setTutorialOpen(true)}>
           <PlayCircle size={17} />
           Watch Tutorial
         </button>
       </div>
+
+      <Modal
+        open={tutorialOpen}
+        onClose={() => setTutorialOpen(false)}
+        title="Finance Workflow Tutorial"
+        description="How managers and Videshway admin use finance in Bizzlo."
+      >
+        <div className="training-list">
+          {[
+            ['Manager account details', 'Manager saves legal name, GST, PAN, bank account, IFSC/SWIFT, and payout currency from Account Details.'],
+            ['Admin verification', 'Videshway admin reviews GST, PAN, bank holder name, and billing address before approving finance readiness.'],
+            ['Application stages', 'Commission tracking starts from submitted applications and moves through offer received, deposit paid, CAS/I-20/COE, visa, and enrolled.'],
+            ['Payment tracking', 'Admin updates projected, ready to invoice, invoiced, and paid statuses so partners can see payment movement.'],
+          ].map(([title, text]) => (
+            <article className="partner-card" key={title}>
+              <div>
+                <PlayCircle size={18} />
+                <strong>{title}</strong>
+              </div>
+              <span>{text}</span>
+            </article>
+          ))}
+        </div>
+      </Modal>
 
       <div className="stats-grid two">
         {currentUser.role === 'admin' ? (
