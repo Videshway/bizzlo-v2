@@ -8,12 +8,15 @@ const emptyPartner = {
   full_name: '',
   email: '',
   portal_username: '',
+  initial_password: '',
   counselor_limit: 1,
 };
 
 const emptyCounselor = {
   full_name: '',
   email: '',
+  portal_username: '',
+  initial_password: '',
 };
 
 function portalUsername(value) {
@@ -34,13 +37,15 @@ export function Team() {
     managerCounselors,
     managers,
     organizations,
+    createAccountLogin,
     requestCounselorAccount,
-    sendAccountInvite,
     updateAccountRequest,
     users,
   } = useAppState();
   const [partner, setPartner] = useState(emptyPartner);
   const [counselor, setCounselor] = useState(emptyCounselor);
+  const [requestPasswords, setRequestPasswords] = useState({});
+  const [credentialReceipts, setCredentialReceipts] = useState([]);
   const [submitting, setSubmitting] = useState(false);
 
   const partnerOrgs = useMemo(() => organizations.filter((organization) => organization.kind !== 'admin'), [organizations]);
@@ -57,11 +62,39 @@ export function Team() {
     }));
   }
 
+  function updateCounselorName(value) {
+    setCounselor((current) => ({
+      ...current,
+      full_name: value,
+      portal_username: current.portal_username || portalUsername(value),
+    }));
+  }
+
+  function updateCounselorEmail(value) {
+    setCounselor((current) => ({
+      ...current,
+      email: value,
+      portal_username: current.portal_username || portalUsername(value.split('@')[0]),
+    }));
+  }
+
+  function rememberCredential(account, password) {
+    setCredentialReceipts((current) => [{
+      id: `${account.id || account.user_id || Date.now()}-${Date.now()}`,
+      role: account.role,
+      name: account.full_name || account.name,
+      email: account.email,
+      portal_username: account.portal_username,
+      password,
+    }, ...current].slice(0, 5));
+  }
+
   async function handlePartnerSubmit(event) {
     event.preventDefault();
     setSubmitting(true);
     try {
-      await addPartnerAccount(partner);
+      const account = await addPartnerAccount(partner);
+      rememberCredential(account, partner.initial_password);
       setPartner(emptyPartner);
     } finally {
       setSubmitting(false);
@@ -72,11 +105,19 @@ export function Team() {
     event.preventDefault();
     setSubmitting(true);
     try {
-      await requestCounselorAccount(counselor);
+      const account = await requestCounselorAccount(counselor);
+      rememberCredential(account, counselor.initial_password);
       setCounselor(emptyCounselor);
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function handleCreateLogin(request) {
+    const password = requestPasswords[request.id] || '';
+    const account = await createAccountLogin(request.id, password);
+    rememberCredential({ ...request, ...account }, password);
+    setRequestPasswords((current) => ({ ...current, [request.id]: '' }));
   }
 
   return (
@@ -84,19 +125,38 @@ export function Team() {
       <div className="page-heading">
         <div>
           <h1>Team & Partners</h1>
-          <p>Videshway admin creates partner managers. Partner managers can request their counselor seat from here.</p>
+          <p>Videshway admin creates partner managers. Partner managers create counselor logins inside their own portal.</p>
         </div>
       </div>
+
+      {credentialReceipts.length ? (
+        <Panel title="One-Time Login Receipts" description="Share these credentials now. Passwords are not stored as readable text after this screen refreshes.">
+          <div className="partner-stack">
+            {credentialReceipts.map((receipt) => (
+              <article className="partner-card" key={receipt.id}>
+                <div>
+                  <CheckCircle2 size={18} />
+                  <strong>{receipt.name || receipt.email}</strong>
+                  <Badge tone="success">{receipt.role || 'login'}</Badge>
+                </div>
+                <span>Username: {receipt.portal_username} - Password: {receipt.password}</span>
+                <span>Email: {receipt.email}</span>
+              </article>
+            ))}
+          </div>
+        </Panel>
+      ) : null}
 
       {currentUser.role === 'admin' ? (
         <>
           <div className="dashboard-columns">
-            <Panel title="Create Partner Manager" description="This creates the partner record and sends it to the secure invite queue.">
+            <Panel title="Create Partner Manager" description="This creates the partner organization and active manager login immediately.">
               <form className="form-grid compact-form" onSubmit={handlePartnerSubmit}>
                 <TextInput label="Partner company" required value={partner.organization_name} onChange={(event) => updatePartnerCompany(event.target.value)} />
                 <TextInput label="Portal username" required minLength={3} pattern="[a-z0-9._-]{3,48}" placeholder="partner-login-id" value={partner.portal_username} onChange={(event) => setPartner({ ...partner, portal_username: portalUsername(event.target.value) })} />
                 <TextInput label="Manager name" required value={partner.full_name} onChange={(event) => setPartner({ ...partner, full_name: event.target.value })} />
                 <TextInput label="Manager email" type="email" required value={partner.email} onChange={(event) => setPartner({ ...partner, email: event.target.value })} />
+                <TextInput label="Initial password" type="password" required minLength={8} autoComplete="new-password" placeholder="At least 8 characters" value={partner.initial_password} onChange={(event) => setPartner({ ...partner, initial_password: event.target.value })} />
                 <SelectInput label="Counselor seats" value={partner.counselor_limit} onChange={(event) => setPartner({ ...partner, counselor_limit: event.target.value })}>
                   <option value="1">1 counselor</option>
                   <option value="2">2 counselors</option>
@@ -128,6 +188,7 @@ export function Team() {
                       </div>
                       <span>Manager: {manager?.name || managerRequest?.full_name || 'Awaiting setup'} - Counselors: {counselors.length}/{organization.counselor_limit || 1}</span>
                       <span>Portal username: {portalLogin} - Email: {loginEmail}</span>
+                      <span>Password: set by admin. Use Create login again with a new password to reset.</span>
                     </article>
                   );
                 })}
@@ -135,7 +196,7 @@ export function Team() {
             </Panel>
           </div>
 
-          <Panel title="Videshway Account Activation Queue" description="Send invite creates the Supabase Auth user, profile row, and password setup link through the admin Edge Function.">
+          <Panel title="Videshway Account Login Board" description="Create or reset logins directly. No Supabase dashboard step is needed.">
             <div className="table-wrap">
               <table>
                 <thead>
@@ -145,7 +206,7 @@ export function Team() {
                     <th>Role</th>
                     <th>Partner</th>
                     <th>Status</th>
-                    <th>Admin</th>
+                    <th>Create login</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -158,8 +219,9 @@ export function Team() {
                       <td><StatusBadge value={request.status} /></td>
                       <td>
                         <div className="row-actions">
-                          <button type="button" onClick={() => sendAccountInvite(request.id).catch(() => {})}>Send invite</button>
-                          <button type="button" onClick={() => updateAccountRequest(request.id, 'needs_auth_user').catch(() => {})}>Needs auth</button>
+                          <input type="password" minLength={8} placeholder="New password" value={requestPasswords[request.id] || ''} onChange={(event) => setRequestPasswords((current) => ({ ...current, [request.id]: event.target.value }))} />
+                          <button type="button" onClick={() => handleCreateLogin(request).catch(() => {})}>Create login</button>
+                          <button type="button" onClick={() => updateAccountRequest(request.id, 'needs_login_creation').catch(() => {})}>Needs login</button>
                           <button type="button" onClick={() => updateAccountRequest(request.id, 'cancelled').catch(() => {})}>Cancel</button>
                         </div>
                       </td>
@@ -181,8 +243,10 @@ export function Team() {
               <span>counselor seat used</span>
             </div>
             <form className="form-grid compact-form" onSubmit={handleCounselorSubmit}>
-              <TextInput label="Counselor name" required disabled={!canRequestCounselor} value={counselor.full_name} onChange={(event) => setCounselor({ ...counselor, full_name: event.target.value })} />
-              <TextInput label="Counselor email" type="email" required disabled={!canRequestCounselor} value={counselor.email} onChange={(event) => setCounselor({ ...counselor, email: event.target.value })} />
+              <TextInput label="Counselor name" required disabled={!canRequestCounselor} value={counselor.full_name} onChange={(event) => updateCounselorName(event.target.value)} />
+              <TextInput label="Counselor email" type="email" required disabled={!canRequestCounselor} value={counselor.email} onChange={(event) => updateCounselorEmail(event.target.value)} />
+              <TextInput label="Portal username" required minLength={3} pattern="[a-z0-9._-]{3,48}" disabled={!canRequestCounselor} value={counselor.portal_username} onChange={(event) => setCounselor({ ...counselor, portal_username: portalUsername(event.target.value) })} />
+              <TextInput label="Initial password" type="password" required minLength={8} autoComplete="new-password" disabled={!canRequestCounselor} placeholder="At least 8 characters" value={counselor.initial_password} onChange={(event) => setCounselor({ ...counselor, initial_password: event.target.value })} />
               <footer className="form-footer">
                 <button className="primary-button" type="submit" disabled={submitting || !canRequestCounselor}>
                   <UserPlus size={16} />
@@ -202,6 +266,7 @@ export function Team() {
                     <Badge tone="success">active</Badge>
                   </div>
                   <span>{item.email}</span>
+                  <span>Username: {item.portal_username || 'Not allocated'}</span>
                 </article>
               ))}
               {managerCounselors.length === 0 ? <p className="muted-copy">No counselor has been created yet.</p> : null}

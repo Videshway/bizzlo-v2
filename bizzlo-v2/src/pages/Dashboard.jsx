@@ -108,7 +108,7 @@ export function Dashboard({ onNavigate }) {
                 <button className="record-row" key={organization.id} type="button" onClick={() => onNavigate('team')}>
                   <div>
                     <strong><Building2 size={16} /> {organization.name}</strong>
-                    <span>Username: {manager?.portal_username || managerRequest?.portal_username || 'Awaiting allocation'} - Email: {manager?.email || managerRequest?.email || 'Invite not sent'} - Counselors: {counselors.length}/{organization.counselor_limit || 1}</span>
+                    <span>Username: {manager?.portal_username || managerRequest?.portal_username || 'Awaiting allocation'} - Email: {manager?.email || managerRequest?.email || 'Login not created'} - Counselors: {counselors.length}/{organization.counselor_limit || 1}</span>
                   </div>
                   <StatusBadge value={manager ? 'active' : managerRequest?.status || organization.status || 'pending_manager_activation'} />
                 </button>
