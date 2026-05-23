@@ -69,7 +69,8 @@ test('011 stores partner portal usernames on requests and profiles', async () =>
 
 test('012 fixes ambiguous rate limit bucket references', async () => {
   const source = await readFile(migration12, 'utf8');
-  assert.match(source, /p_bucket text/);
-  assert.match(source, /values \(p_bucket, current_window, 1\)/);
+  assert.match(source, /edge_check_rate_limit\(bucket text, max_count integer\)/);
+  assert.match(source, /values \(\$1, current_window, 1\)/);
+  assert.match(source, /current_count <= \$2/);
   assert.doesNotMatch(source, /values \(bucket, current_window, 1\)/);
 });
