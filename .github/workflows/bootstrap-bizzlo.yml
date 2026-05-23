@@ -25,7 +25,8 @@ jobs:
           fi
           base64 -d bizzlo-source.tar.gz.b64 > /tmp/bizzlo-source.tar.gz
           tar -xzf /tmp/bizzlo-source.tar.gz -C .
-          rm -f bizzlo-source.tar.gz.b64 .github/workflows/bootstrap-bizzlo.yml
+          find . -name '._*' -delete
+          rm -f bizzlo-source.tar.gz.b64
       - name: Commit unpacked source
         run: |
           git config user.name "github-actions[bot]"
