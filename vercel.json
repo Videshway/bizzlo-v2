@@ -1,1 +1,1 @@
-{"installCommand":"npm ci --prefix bizzlo-v2","buildCommand":"npm run build --prefix bizzlo-v2","outputDirectory":"bizzlo-v2/dist","framework":null,"cleanUrls":true,"trailingSlash":false,"routes":[{"handle":"filesystem"},{"src":"/.*","dest":"/index.html"}]}
+{"installCommand":"npm ci --prefix bizzlo-v2","buildCommand":"npm run build --prefix bizzlo-v2 && cp bizzlo-v2/dist/index.html bizzlo-v2/dist/404.html","outputDirectory":"bizzlo-v2/dist","framework":null,"cleanUrls":true,"trailingSlash":false}
