@@ -42,19 +42,30 @@ stable
 security invoker
 set search_path = public
 as $$
+  with filtered as (
+    select c.id,
+           row_number() over (partition by c.country order by c.university asc, c.course asc) as country_rank
+    from public.courses c
+    where c.is_active = true
+      and (filter_country is null or filter_country = '' or filter_country = 'All' or c.country = filter_country)
+      and (filter_level is null or filter_level = '' or filter_level = 'All' or c.level = filter_level)
+      and (filter_intake is null or filter_intake = '' or filter_intake = 'All' or c.intake ilike '%' || filter_intake || '%')
+      and (
+        filter_query is null
+        or filter_query = ''
+        or lower(coalesce(c.university, '') || ' ' || coalesce(c.course, '') || ' ' || coalesce(c.subject, '') || ' ' || coalesce(c.city, '') || ' ' || coalesce(c.country, ''))
+          like '%' || lower(filter_query) || '%'
+      )
+  )
   select c.*
-  from public.courses c
-  where c.is_active = true
-    and (filter_country is null or filter_country = '' or filter_country = 'All' or c.country = filter_country)
-    and (filter_level is null or filter_level = '' or filter_level = 'All' or c.level = filter_level)
-    and (filter_intake is null or filter_intake = '' or filter_intake = 'All' or c.intake ilike '%' || filter_intake || '%')
-    and (
-      filter_query is null
-      or filter_query = ''
-      or lower(coalesce(c.university, '') || ' ' || coalesce(c.course, '') || ' ' || coalesce(c.subject, '') || ' ' || coalesce(c.city, '') || ' ' || coalesce(c.country, ''))
-        like '%' || lower(filter_query) || '%'
-    )
-  order by c.university asc, c.course asc
+  from filtered f
+  join public.courses c on c.id = f.id
+  order by
+    case when (filter_country is null or filter_country = '' or filter_country = 'All')
+          and (filter_query is null or filter_query = '') then f.country_rank else 0 end asc,
+    c.country asc,
+    c.university asc,
+    c.course asc
   limit least(greatest(coalesce(page_limit, 60), 1), 100)
   offset greatest(coalesce(page_offset, 0), 0);
 $$;
@@ -90,4 +101,3 @@ exception
   when undefined_function then null;
 end;
 $$;
-
