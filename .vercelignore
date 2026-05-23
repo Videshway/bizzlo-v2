@@ -1,0 +1,12 @@
+backend/
+frontend/
+node_modules/
+bizzlo-v2/node_modules/
+bizzlo-v2/private-data/
+bizzlo-v2/.env*
+bizzlo-v2/.vercel/
+.emergent/
+test_reports/
+tests/
+memory/
+*.log

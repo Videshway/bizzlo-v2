@@ -1,0 +1,36 @@
+{
+  "name": "bizzlo-v2",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "build:standalone": "VITE_ENABLE_DEMO=true vite build && node scripts/build-standalone.mjs",
+    "preview": "vite preview --host 0.0.0.0",
+    "lint": "eslint .",
+    "test:catalog-integrations": "node scripts/test-catalog-integrations.mjs",
+    "import:courses": "node scripts/import-courses.mjs",
+    "import:partner-universities": "python3 scripts/import-partner-university-index.py",
+    "seed:supabase-courses": "node scripts/seed-supabase-courses.mjs",
+    "bootstrap:admin": "node scripts/bootstrap-admin.mjs",
+    "db:check-rls": "node scripts/check-rls.mjs",
+    "dns:check": "node scripts/check-dns.mjs",
+    "test": "node --test tests/components/*.test.mjs tests/pages/*.test.mjs tests/lib/*.test.mjs tests/edge-functions/*.test.mjs",
+    "test:ci": "node --test tests/components/*.test.mjs tests/pages/*.test.mjs tests/lib/*.test.mjs tests/edge-functions/*.test.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.76.1",
+    "@vitejs/plugin-react": "^5.1.0",
+    "vite": "^7.2.4",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "lucide-react": "^0.555.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0"
+  }
+}
