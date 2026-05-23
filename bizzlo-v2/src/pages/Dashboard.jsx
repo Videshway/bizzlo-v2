@@ -1,4 +1,4 @@
-import { CheckCircle2, ClipboardList, FileText, Landmark, UploadCloud, Users } from 'lucide-react';
+import { Building2, CheckCircle2, ClipboardList, FileText, Landmark, UploadCloud, Users } from 'lucide-react';
 import { referenceActions } from '../data/referenceWorkflow';
 import { useAppState } from '../lib/appState';
 import { money } from '../lib/status';
@@ -13,6 +13,10 @@ export function Dashboard({ onNavigate }) {
     visibleTasks,
     visibleCommissions,
     visiblePartnerFinanceProfiles,
+    accountRequests,
+    managers,
+    organizations,
+    users,
   } = useAppState();
 
   const pendingApps = visibleApplications.filter((app) => ['documents_pending', 'pending_admin_review', 'awaiting_decision', 'submitted_to_university'].includes(app.status));
@@ -20,6 +24,7 @@ export function Dashboard({ onNavigate }) {
   const documentIssues = visibleDocuments.filter((doc) => doc.status === 'rejected');
   const commissionTotal = visibleCommissions.reduce((sum, item) => sum + Number(item.expected_amount || 0), 0);
   const payoutCurrency = visibleCommissions[0]?.currency || visiblePartnerFinanceProfiles[0]?.payout_currency || 'INR';
+  const partnerOrgs = organizations.filter((organization) => organization.kind !== 'admin');
 
   return (
     <div className="page-grid">
@@ -68,7 +73,7 @@ export function Dashboard({ onNavigate }) {
               <button className="record-row" key={application.id} type="button" onClick={() => onNavigate('applications')}>
                 <div>
                   <strong>{application.university}</strong>
-                  <span>{application.course} · {application.intake}</span>
+                  <span>{application.course} - {application.intake}</span>
                 </div>
                 <StatusBadge value={application.status} />
               </button>
@@ -85,12 +90,34 @@ export function Dashboard({ onNavigate }) {
                   <span className={`priority-pill ${String(task.priority || 'Medium').toLowerCase()}`}>{task.priority || 'Medium'}</span>
                 </div>
                 <strong>{task.title}</strong>
-                <span>Owner: {task.owner} · Due {task.due}</span>
+                <span>Owner: {task.owner} - Due {task.due}</span>
               </button>
             ))}
           </div>
         </Panel>
       </div>
+
+      {currentUser.role === 'admin' ? (
+        <Panel title="Partner Portal Access Board" description="Allocated partner manager usernames and sign-in emails for admin handoff.">
+          <div className="stack-list">
+            {partnerOrgs.slice(0, 6).map((organization) => {
+              const manager = managers.find((user) => user.organization_id === organization.id || user.id === organization.primary_manager_id);
+              const managerRequest = accountRequests.find((request) => request.role === 'manager' && request.organization_id === organization.id);
+              const counselors = users.filter((user) => user.role === 'counselor' && user.organization_id === organization.id);
+              return (
+                <button className="record-row" key={organization.id} type="button" onClick={() => onNavigate('team')}>
+                  <div>
+                    <strong><Building2 size={16} /> {organization.name}</strong>
+                    <span>Username: {manager?.portal_username || managerRequest?.portal_username || 'Awaiting allocation'} - Email: {manager?.email || managerRequest?.email || 'Invite not sent'} - Counselors: {counselors.length}/{organization.counselor_limit || 1}</span>
+                  </div>
+                  <StatusBadge value={manager ? 'active' : managerRequest?.status || organization.status || 'pending_manager_activation'} />
+                </button>
+              );
+            })}
+            {partnerOrgs.length === 0 ? <p className="muted-copy">No partner portal accounts have been allocated yet.</p> : null}
+          </div>
+        </Panel>
+      ) : null}
 
       <Panel title="Offer And Enrollment Signals" description="Manager view of likely commission-generating movement.">
         <div className="signal-strip">
