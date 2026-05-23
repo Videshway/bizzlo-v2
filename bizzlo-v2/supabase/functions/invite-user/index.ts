@@ -7,7 +7,6 @@ import {
   env,
   json,
   logEdgeEvent,
-  siteUrl as configuredSiteUrl,
   userClient as createUserClient,
 } from "../_shared/security.ts";
 
@@ -27,6 +26,10 @@ function normalizePortalUsername(value: unknown) {
     .slice(0, 48);
 }
 
+function portalLoginEmail(username: string) {
+  return `${normalizePortalUsername(username)}@portal.bizzlo.co`;
+}
+
 export async function handleInviteUser(request: Request) {
   try {
     if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) });
@@ -37,7 +40,6 @@ export async function handleInviteUser(request: Request) {
     const allowed = await checkRateLimit(adminClient, request, "invite-user", 30);
     if (!allowed) return json(request, { error: "Too many invite attempts. Try again in a minute." }, 429);
 
-    const siteUrl = configuredSiteUrl();
     const authorization = request.headers.get("authorization") || "";
     const userClient = createUserClient(authorization);
 
@@ -46,16 +48,17 @@ export async function handleInviteUser(request: Request) {
 
   const { data: adminProfile, error: profileError } = await userClient
     .from("profiles")
-    .select("id, role")
+    .select("id, role, organization_id")
     .eq("id", authData.user.id)
     .single();
 
-  if (profileError || adminProfile?.role !== "admin") {
-    return json(request, { error: "Only Videshway admin can send account invites." }, 403);
+  if (profileError || !adminProfile) {
+    return json(request, { error: "Active Bizzlo profile not found." }, 403);
   }
 
-  const { account_request_id: accountRequestId } = await request.json().catch(() => ({}));
+  const { account_request_id: accountRequestId, password } = await request.json().catch(() => ({}));
   if (!accountRequestId) return json(request, { error: "account_request_id is required." }, 400);
+  if (!password || String(password).length < 8) return json(request, { error: "Password must be at least 8 characters." }, 400);
 
   const { data: accountRequest, error: requestError } = await adminClient
     .from("account_requests")
@@ -65,27 +68,55 @@ export async function handleInviteUser(request: Request) {
 
   if (requestError || !accountRequest) return json(request, { error: "Account request not found." }, 404);
 
+  const isAdmin = adminProfile.role === "admin";
+  const isManagerCreatingOwnCounselor = adminProfile.role === "manager"
+    && accountRequest.role === "counselor"
+    && accountRequest.organization_id === adminProfile.organization_id
+    && accountRequest.manager_id === authData.user.id
+    && accountRequest.requested_by === authData.user.id;
+  if (!isAdmin && !isManagerCreatingOwnCounselor) {
+    return json(request, { error: "You cannot create this account login." }, 403);
+  }
+
   const email = String(accountRequest.email || "").trim().toLowerCase();
   if (!email) return json(request, { error: "Account request has no email." }, 400);
   const portalUsername = normalizePortalUsername(accountRequest.portal_username || email.split("@")[0]);
   if (portalUsername.length < 3) return json(request, { error: "Account request has no valid portal username." }, 400);
+  const loginEmail = portalLoginEmail(portalUsername);
 
-  const inviteResult = await adminClient.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${siteUrl}/`,
-    data: {
+  const userMetadata = {
       full_name: accountRequest.full_name,
       portal_username: portalUsername,
+      contact_email: email,
       role: accountRequest.role,
       organization_id: accountRequest.organization_id,
-    },
+    };
+
+  const createResult = await adminClient.auth.admin.createUser({
+    email: loginEmail,
+    password: String(password),
+    email_confirm: true,
+    user_metadata: userMetadata,
   });
 
-  if (inviteResult.error && !/already registered|already exists|already been registered/i.test(inviteResult.error.message)) {
-    return json(request, { error: inviteResult.error.message }, 400);
+  if (createResult.error && !/already registered|already exists|already been registered/i.test(createResult.error.message)) {
+    return json(request, { error: createResult.error.message }, 400);
   }
 
-  const userId = inviteResult.data.user?.id || await resolveUserIdByEmail(adminClient, email);
-  if (!userId) return json(request, { error: "Could not resolve invited auth user." }, 400);
+  const userId = createResult.data?.user?.id
+    || await resolveUserIdByEmail(adminClient, loginEmail)
+    || await resolveUserIdByEmail(adminClient, email);
+  if (!userId) return json(request, { error: "Could not resolve created auth user." }, 400);
+
+  if (!createResult.data?.user?.id) {
+    const { error: updateAuthError } = await adminClient.auth.admin.updateUserById(userId, {
+      email: loginEmail,
+      password: String(password),
+      email_confirm: true,
+      user_metadata: userMetadata,
+    });
+    if (updateAuthError) return json(request, { error: updateAuthError.message }, 400);
+  }
 
   const { error: profileUpsertError } = await adminClient.from("profiles").upsert({
     id: userId,
@@ -114,9 +145,9 @@ export async function handleInviteUser(request: Request) {
   const { error: updateError } = await adminClient
     .from("account_requests")
     .update({
-      status: "invited",
+      status: "active",
       portal_username: portalUsername,
-      note: `Invite email sent to ${email}. Portal username: ${portalUsername}.`,
+      note: `Login created for ${email}. Portal username: ${portalUsername}.`,
     })
     .eq("id", accountRequestId);
   if (updateError) return json(request, { error: updateError.message }, 400);
@@ -124,6 +155,8 @@ export async function handleInviteUser(request: Request) {
   return json(request, {
     ok: true,
     email,
+    role: accountRequest.role,
+    full_name: accountRequest.full_name,
     portal_username: portalUsername,
     user_id: userId,
   });
