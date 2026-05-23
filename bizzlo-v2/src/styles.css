@@ -1759,6 +1759,11 @@ td small {
   font-size: 13px;
 }
 
+.partner-card .compact-field {
+  margin-top: 12px;
+  max-width: 220px;
+}
+
 .seat-meter {
   min-height: 86px;
   border-radius: 13px;
