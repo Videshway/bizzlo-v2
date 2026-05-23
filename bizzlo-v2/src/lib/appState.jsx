@@ -402,6 +402,8 @@ export function AppStateProvider({ children }) {
     setDataLoading(true);
     setAppError('');
     try {
+      const isAdminProfile = profile.role === 'admin';
+      const isCounselorProfile = profile.role === 'counselor';
       const [
         profilesResult,
         organizationsResult,
@@ -420,44 +422,52 @@ export function AppStateProvider({ children }) {
         auditEventsResult,
         studentInvitesResult,
       ] = await Promise.all([
-        supabase.from('profiles').select('id, organization_id, manager_id, full_name, email, role, is_active, portal_username').eq('is_active', true).order('full_name'),
-        supabase.from('organizations').select('*').order('created_at', { ascending: false }),
-        supabase.from('account_requests').select('*').order('created_at', { ascending: false }),
+        supabase
+          .from('profiles')
+          .select('id, organization_id, manager_id, full_name, email, role, is_active, portal_username')
+          .eq('is_active', true)
+          .order('full_name')
+          .range(0, 249),
+        isAdminProfile
+          ? supabase.from('organizations').select('*').order('created_at', { ascending: false }).range(0, 199)
+          : supabase.from('organizations').select('*').eq('id', profile.organization_id).range(0, 0),
+        supabase.from('account_requests').select('*').order('created_at', { ascending: false }).range(0, 199),
         supabase.from('students').select('*').order('updated_at', { ascending: false }).range(0, 49),
         supabase.from('applications').select('*').order('updated_at', { ascending: false }).range(0, 49),
         supabase
           .from('application_events')
           .select('*, actor:profiles(full_name)')
-          .order('created_at', { ascending: false }),
+          .order('created_at', { ascending: false })
+          .range(0, 199),
         supabase.from('documents').select('*').order('created_at', { ascending: false }).range(0, 99),
-        supabase.rpc('search_courses', {
-          filter_country: 'All',
-          filter_level: 'All',
-          filter_intake: 'September',
-          filter_query: '',
-          page_limit: 100,
-          page_offset: 0,
-        }),
+        supabase.from('courses').select('*').eq('is_active', true).limit(100),
         supabase.from('tasks').select('*').order('status', { ascending: true }).order('due_date', { ascending: true }).range(0, 99),
-        supabase
-          .from('commissions')
-          .select('*, application:applications(student_id, university, course)')
-          .order('updated_at', { ascending: false }),
-        supabase.from('partner_finance_profiles').select('*').order('updated_at', { ascending: false }),
+        isCounselorProfile
+          ? Promise.resolve({ data: [], error: null })
+          : supabase
+            .from('commissions')
+            .select('*, application:applications(student_id, university, course)')
+            .order('updated_at', { ascending: false })
+            .range(0, 199),
+        isCounselorProfile
+          ? Promise.resolve({ data: [], error: null })
+          : supabase.from('partner_finance_profiles').select('*').order('updated_at', { ascending: false }).range(0, 99),
         supabase
           .from('service_requests')
           .select('*, requester:profiles(full_name)')
-          .order('created_at', { ascending: false }),
+          .order('created_at', { ascending: false })
+          .range(0, 99),
         supabase
           .from('support_tickets')
           .select('*, creator:profiles(full_name)')
-          .order('created_at', { ascending: false }),
+          .order('created_at', { ascending: false })
+          .range(0, 99),
         supabase
           .from('training_progress')
           .select('*')
           .eq('user_id', profile.id)
           .order('completed_at', { ascending: false }),
-        profile.role === 'admin'
+        isAdminProfile
           ? supabase
             .from('audit_events')
             .select('*, actor:profiles(full_name)')
@@ -930,7 +940,8 @@ export function AppStateProvider({ children }) {
     ));
 
     if (activeCounselors.length >= counselorLimit || pendingCounselorRequests.length >= counselorLimit) {
-      const error = new Error(`This partner currently has ${counselorLimit} counselor seat. Ask Videshway admin to increase the seat limit.`);
+      const seatLabel = counselorLimit === 1 ? 'seat' : 'seats';
+      const error = new Error(`This partner currently has ${counselorLimit} counselor ${seatLabel}, and all seats are used or pending. Ask Videshway admin to increase the seat limit.`);
       setAppError(error.message);
       throw error;
     }
@@ -1033,6 +1044,42 @@ export function AppStateProvider({ children }) {
     setAccountRequests((prev) => prev.map((request) => (request.id === requestId ? data : request)));
   }
 
+  async function updatePartnerSeatLimit(organizationId, counselorLimit) {
+    requireUser(currentUser);
+    setAppError('');
+
+    if (currentUser.role !== 'admin') {
+      const error = new Error('Only Videshway admin can change counselor seat limits.');
+      setAppError(error.message);
+      throw error;
+    }
+
+    const nextLimit = Math.max(1, Math.min(10, Number(counselorLimit) || 1));
+
+    if (!isSupabaseConfigured) {
+      setOrganizations((prev) => prev.map((organization) => (
+        organization.id === organizationId ? { ...organization, counselor_limit: nextLimit } : organization
+      )));
+      return { id: organizationId, counselor_limit: nextLimit };
+    }
+
+    const { data, error } = await supabase
+      .from('organizations')
+      .update({ counselor_limit: nextLimit })
+      .eq('id', organizationId)
+      .select('*')
+      .single();
+
+    if (error) {
+      setAppError(error.message);
+      throw error;
+    }
+
+    setOrganizations((prev) => prev.map((organization) => (organization.id === organizationId ? data : organization)));
+    logAuditEvent('system', organizationId, 'partner_seat_limit_updated', { counselor_limit: nextLimit }).catch(() => {});
+    return data;
+  }
+
   async function createAccountLogin(requestId, password, requestOverride = null) {
     requireUser(currentUser);
     setAppError('');
@@ -1061,10 +1108,18 @@ export function AppStateProvider({ children }) {
       return { ok: true, ...request };
     }
 
-        const { data: authdata } = await supabase.auth.getSession();
-        const token = session && session.access_token || authdata && authdata.session && authdata.session.access_token;
+    const { data: sessionResult, error: sessionError } = await supabase.auth.getSession();
+    const authSession = session || (sessionResult && sessionResult.session);
+    if (sessionError || !authSession || !authSession.access_token) {
+      const error = new Error('Your admin session expired. Please sign in again and retry login creation.');
+      setAppError(error.message);
+      throw error;
+    }
+
     const { data, error } = await supabase.functions.invoke('invite-user', {
-      headers: { Authorization: 'Bearer ' + token },
+      headers: {
+        Authorization: 'Bearer ' + authSession.access_token,
+      },
       body: { account_request_id: requestId, password },
     });
 
@@ -1995,6 +2050,7 @@ export function AppStateProvider({ children }) {
     addPartnerAccount,
     requestCounselorAccount,
     updateAccountRequest,
+    updatePartnerSeatLimit,
     createAccountLogin,
     sendAccountInvite,
     createStudentInvite,
