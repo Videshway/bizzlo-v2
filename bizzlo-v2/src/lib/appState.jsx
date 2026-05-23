@@ -1061,7 +1061,10 @@ export function AppStateProvider({ children }) {
       return { ok: true, ...request };
     }
 
+        const { data: authdata } = await supabase.auth.getSession();
+        const token = authdata && authdata.session && authdata.session.access_token;
     const { data, error } = await supabase.functions.invoke('invite-user', {
+      headers: { authorization: 'Bearer ' + token },
       body: { account_request_id: requestId, password },
     });
 
