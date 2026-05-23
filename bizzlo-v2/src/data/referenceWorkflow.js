@@ -82,6 +82,7 @@ export const resourceLibrary = [
     summary: 'Daily workflow for managers and counselors: student intake, shortlist, documents, admin review, and commission visibility.',
     icon: Presentation,
     filename: 'bizzlo-partner-operating-playbook.ppt',
+    file_url: '/resources/bizzlo-partner-operating-playbook.ppt',
   },
   {
     title: 'Country Desk Guide Pack',
@@ -114,6 +115,7 @@ export const resourceLibrary = [
     summary: 'CAS/I-20/COE readiness, finance proof, interview preparation, and refusal-risk checks.',
     icon: Presentation,
     filename: 'bizzlo-visa-readiness-deck.ppt',
+    file_url: '/resources/bizzlo-visa-readiness-deck.ppt',
   },
   {
     title: 'Commission & Payments SOP',
@@ -130,6 +132,7 @@ export const resourceLibrary = [
     summary: 'Accommodation, forex, insurance, airport pickup, packing list, enrollment steps, and arrival checklist.',
     icon: Home,
     filename: 'bizzlo-pre-departure-support-pack.ppt',
+    file_url: '/resources/bizzlo-pre-departure-support-pack.ppt',
   },
   {
     title: 'Counselor Call Scripts',
@@ -182,26 +185,30 @@ const resourceSizeByCategory = {
   'Latest Updates': '0.34 MB',
 };
 
-function resourceFilename(country, category) {
-  return `bizzlo-${country.toLowerCase().replaceAll(' ', '-')}-${category.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.pdf`;
+function resourceFilename(country, category, type) {
+  const extension = type === 'PPT' ? 'ppt' : 'pdf';
+  return `bizzlo-${country.toLowerCase().replaceAll(' ', '-')}-${category.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.${extension}`;
 }
 
 export const resourceDocuments = resourceCountries.flatMap((country, countryIndex) => (
-  resourceCategories.map((category, categoryIndex) => ({
-    id: `${country.id}-${category.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
-    country: country.name,
-    countryId: country.id,
-    category,
-    title: category === 'General Presentations'
-      ? `${country.name} General Presentation (India)`
-      : `${country.name} - ${category}`,
-    date: categoryIndex < 4 ? '18-02-2026' : '04-12-2025',
-    size: resourceSizeByCategory[category] || '0.50 MB',
-    type: ['General Presentations', 'Application Guide & Method', 'Latest Updates'].includes(category) ? 'PPT' : 'PDF',
-    filename: resourceFilename(country.name, category),
-    summary: `${country.name} ${category.toLowerCase()} resource for partner counseling, document collection, and application readiness.`,
-    market: countryIndex % 2 === 0 ? 'India' : 'Global',
-  }))
+  resourceCategories.map((category, categoryIndex) => {
+    const type = ['General Presentations', 'Application Guide & Method', 'Latest Updates'].includes(category) ? 'PPT' : 'PDF';
+    return {
+      id: `${country.id}-${category.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+      country: country.name,
+      countryId: country.id,
+      category,
+      title: category === 'General Presentations'
+        ? `${country.name} General Presentation (India)`
+        : `${country.name} - ${category}`,
+      date: categoryIndex < 4 ? '18-02-2026' : '04-12-2025',
+      size: resourceSizeByCategory[category] || '0.50 MB',
+      type,
+      filename: resourceFilename(country.name, category, type),
+      summary: `${country.name} ${category.toLowerCase()} resource for partner counseling, document collection, and application readiness.`,
+      market: countryIndex % 2 === 0 ? 'India' : 'Global',
+    };
+  })
 ));
 
 export const complianceChecks = [
