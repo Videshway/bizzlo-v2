@@ -1,0 +1,35 @@
+name: Bootstrap Bizzlo source
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - bizzlo-source.tar.gz.b64
+      - .github/workflows/bootstrap-bizzlo.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack clean Bizzlo source
+        run: |
+          if [ ! -f bizzlo-source.tar.gz.b64 ]; then
+            echo "No source payload yet; nothing to unpack."
+            exit 0
+          fi
+          base64 -d bizzlo-source.tar.gz.b64 > /tmp/bizzlo-source.tar.gz
+          tar -xzf /tmp/bizzlo-source.tar.gz -C .
+          rm -f bizzlo-source.tar.gz.b64 .github/workflows/bootstrap-bizzlo.yml
+      - name: Commit unpacked source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Deploy Bizzlo v2 source" || exit 0
+          git push
