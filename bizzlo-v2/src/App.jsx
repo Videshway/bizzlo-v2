@@ -83,6 +83,10 @@ function routeFromLocation() {
     return 'studentPortal';
   }
   const normalized = pathname.replace(/\/$/, '') || '/';
+  if (['/login', '/auth/login', '/dashboard'].includes(normalized)) {
+    window.history.replaceState({}, '', '/');
+    return 'dashboard';
+  }
   return pathPages[normalized] || 'notFound';
 }
 
