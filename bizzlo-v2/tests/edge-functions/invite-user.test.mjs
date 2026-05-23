@@ -25,3 +25,11 @@ test('invite-user sends Supabase invite email instead of recovery links', async 
   assert.doesNotMatch(source, /type: "recovery"/);
   assert.match(source, /redirectTo: `\$\{siteUrl\}\/`/);
 });
+
+test('invite-user carries portal username into auth metadata and profile', async () => {
+  const source = await readFile(sourcePath, 'utf8');
+
+  assert.match(source, /normalizePortalUsername/);
+  assert.match(source, /portal_username: portalUsername/);
+  assert.match(source, /Account request has no valid portal username/);
+});
