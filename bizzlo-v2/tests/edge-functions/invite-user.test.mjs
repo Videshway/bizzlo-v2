@@ -4,11 +4,12 @@ import test from 'node:test';
 
 const sourcePath = new URL('../../supabase/functions/invite-user/index.ts', import.meta.url);
 
-test('invite-user rejects non-admin callers', async () => {
+test('invite-user authorizes admin or owning manager only', async () => {
   const source = await readFile(sourcePath, 'utf8');
 
-  assert.match(source, /adminProfile\?\.role !== "admin"/);
-  assert.match(source, /Only Videshway admin can send account invites\./);
+  assert.match(source, /const isAdmin = adminProfile\.role === "admin"/);
+  assert.match(source, /isManagerCreatingOwnCounselor/);
+  assert.match(source, /You cannot create this account login\./);
 });
 
 test('invite-user validates account_request_id', async () => {
@@ -18,18 +19,21 @@ test('invite-user validates account_request_id', async () => {
   assert.match(source, /account_request_id is required\." }, 400/);
 });
 
-test('invite-user sends Supabase invite email instead of recovery links', async () => {
+test('invite-user creates a password login instead of sending invite email', async () => {
   const source = await readFile(sourcePath, 'utf8');
 
-  assert.match(source, /inviteUserByEmail/);
+  assert.match(source, /createUser/);
+  assert.match(source, /password: String\(password\)/);
+  assert.match(source, /email_confirm: true/);
+  assert.doesNotMatch(source, /inviteUserByEmail/);
   assert.doesNotMatch(source, /type: "recovery"/);
-  assert.match(source, /redirectTo: `\$\{siteUrl\}\/`/);
 });
 
 test('invite-user carries portal username into auth metadata and profile', async () => {
   const source = await readFile(sourcePath, 'utf8');
 
   assert.match(source, /normalizePortalUsername/);
+  assert.match(source, /portalLoginEmail/);
   assert.match(source, /portal_username: portalUsername/);
   assert.match(source, /Account request has no valid portal username/);
 });
