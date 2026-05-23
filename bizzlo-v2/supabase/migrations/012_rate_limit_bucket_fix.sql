@@ -2,7 +2,7 @@
 
 drop function if exists public.edge_check_rate_limit(text, integer);
 
-create function public.edge_check_rate_limit(p_bucket text, p_max_count integer)
+create function public.edge_check_rate_limit(bucket text, max_count integer)
 returns boolean
 language plpgsql
 security definer
@@ -13,12 +13,12 @@ declare
   current_count integer;
 begin
   insert into public.request_throttle (bucket, window_start, count)
-  values (p_bucket, current_window, 1)
+  values ($1, current_window, 1)
   on conflict (bucket, window_start) do update
     set count = public.request_throttle.count + 1
   returning public.request_throttle.count into current_count;
 
-  return current_count <= p_max_count;
+  return current_count <= $2;
 end;
 $$;
 
