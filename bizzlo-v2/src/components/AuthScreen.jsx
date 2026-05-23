@@ -31,7 +31,7 @@ export function AuthScreen() {
 
   async function handleResetPassword() {
     if (!form.email) {
-      setMessage('Enter your email first, then request a reset link.');
+      setMessage('Enter your username or email first, then request a reset link.');
       return;
     }
     setSubmitting(true);
@@ -138,12 +138,12 @@ export function AuthScreen() {
 
           <form className="auth-form" onSubmit={handleSubmit}>
             <label className="field">
-              <span>Email</span>
+              <span>Username or email</span>
               <input
-                type="email"
+                type="text"
                 required
-                autoComplete="email"
-                placeholder="name@company.com"
+                autoComplete="username"
+                placeholder="partner-login-id or name@company.com"
                 value={form.email}
                 onChange={(event) => setForm({ ...form, email: event.target.value })}
               />
