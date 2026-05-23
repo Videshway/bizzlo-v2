@@ -14,7 +14,7 @@ declare
 begin
   insert into public.request_throttle (bucket, window_start, count)
   values ($1, current_window, 1)
-  on conflict (bucket, window_start) do update
+  on conflict on constraint request_throttle_pkey do update
     set count = public.request_throttle.count + 1
   returning public.request_throttle.count into current_count;
 
