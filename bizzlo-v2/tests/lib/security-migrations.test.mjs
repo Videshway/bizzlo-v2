@@ -7,6 +7,7 @@ const migration8 = new URL('../../supabase/migrations/008_security_plumbing.sql'
 const migration9 = new URL('../../supabase/migrations/009_indexes_and_cron.sql', import.meta.url);
 const migration10 = new URL('../../supabase/migrations/010_data_rights.sql', import.meta.url);
 const migration11 = new URL('../../supabase/migrations/011_partner_portal_identity.sql', import.meta.url);
+const migration12 = new URL('../../supabase/migrations/012_rate_limit_bucket_fix.sql', import.meta.url);
 
 test('007 creates OTP and throttle tables', async () => {
   const source = await readFile(migration7, 'utf8');
@@ -64,4 +65,11 @@ test('011 stores partner portal usernames on requests and profiles', async () =>
   assert.match(source, /portal_username/);
   assert.match(source, /idx_profiles_portal_username_unique/);
   assert.match(source, /account_requests_portal_username_format/);
+});
+
+test('012 fixes ambiguous rate limit bucket references', async () => {
+  const source = await readFile(migration12, 'utf8');
+  assert.match(source, /p_bucket text/);
+  assert.match(source, /values \(p_bucket, current_window, 1\)/);
+  assert.doesNotMatch(source, /values \(bucket, current_window, 1\)/);
 });
