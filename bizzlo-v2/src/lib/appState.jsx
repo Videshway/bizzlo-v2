@@ -110,6 +110,22 @@ function partnerPortalUsername(partner) {
   return normalizePortalUsername(partner.email?.split('@')[0] || partner.full_name);
 }
 
+function portalLoginEmail(username) {
+  return `${normalizePortalUsername(username)}@portal.bizzlo.co`;
+}
+
+function loginEmailForIdentifier(identifier) {
+  const value = String(identifier || '').trim();
+  if (value.includes('@')) return value.toLowerCase();
+  return portalLoginEmail(value);
+}
+
+function validateInitialPassword(password) {
+  if (String(password || '').length < 8) {
+    throw new Error('Password must be at least 8 characters.');
+  }
+}
+
 function courseIdentityKey(course) {
   if (course.catalog_key) return normalizeCourseValue(course.catalog_key).toLowerCase();
   if (course.external_course_id) {
@@ -633,7 +649,8 @@ export function AppStateProvider({ children }) {
 
     setAuthLoading(true);
     setAppError('');
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const loginEmail = loginEmailForIdentifier(email);
+    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
     if (error) {
       setAuthLoading(false);
       setAppError(error.message);
@@ -643,7 +660,7 @@ export function AppStateProvider({ children }) {
       entity_type: 'auth',
       entity_id: null,
       action: 'sign_in',
-      metadata: { email },
+      metadata: { login_identifier: email },
     }).catch(() => {});
     captureEvent('sign_in', {}, currentUser);
   }
@@ -656,7 +673,7 @@ export function AppStateProvider({ children }) {
   async function resetPassword(email) {
     if (!isSupabaseConfigured) return;
     setAppError('');
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(loginEmailForIdentifier(email), {
       redirectTo: window.location.origin,
     });
     if (error) {
@@ -807,6 +824,12 @@ export function AppStateProvider({ children }) {
       setAppError(error.message);
       throw error;
     }
+    try {
+      validateInitialPassword(partner.initial_password);
+    } catch (error) {
+      setAppError(error.message);
+      throw error;
+    }
 
     if (!isSupabaseConfigured) {
       const organizationId = `org-${Date.now()}`;
@@ -836,9 +859,10 @@ export function AppStateProvider({ children }) {
         full_name: partner.full_name,
         email: partner.email,
         portal_username: portalUsername,
+        auth_login_email: portalLoginEmail(portalUsername),
         requested_by: currentUser.id,
         status: 'active',
-        note: 'Demo manager account created.',
+        note: 'Demo manager login created.',
         created_at: new Date().toISOString(),
       };
       setOrganizations((prev) => [organization, ...prev]);
@@ -851,7 +875,7 @@ export function AppStateProvider({ children }) {
       name: partner.organization_name,
       kind: 'partner',
       counselor_limit: Number(partner.counselor_limit || 1),
-      status: 'pending_manager_activation',
+      status: 'pending_login_creation',
     };
     const { data: organization, error: orgError } = await supabase
       .from('organizations')
@@ -872,8 +896,8 @@ export function AppStateProvider({ children }) {
       email: partner.email,
       portal_username: portalUsername,
       requested_by: currentUser.id,
-      status: 'needs_auth_user',
-      note: 'Ready for secure invite. Use Send invite to create Auth user and profile.',
+      status: 'needs_login_creation',
+      note: 'Ready for direct login creation.',
     };
     const { data, error } = await supabase.from('account_requests').insert(requestPayload).select('*').single();
     if (error) {
@@ -882,7 +906,8 @@ export function AppStateProvider({ children }) {
     }
     setOrganizations((prev) => [organization, ...prev]);
     setAccountRequests((prev) => [data, ...prev]);
-    return data;
+    const created = await createAccountLogin(data.id, partner.initial_password);
+    return { ...data, ...created };
   }
 
   async function requestCounselorAccount(counselor) {
@@ -910,13 +935,26 @@ export function AppStateProvider({ children }) {
       throw error;
     }
 
+    const portalUsername = normalizePortalUsername(counselor.portal_username || counselor.email?.split('@')[0] || counselor.full_name);
+    if (!portalUsername || portalUsername.length < 3) {
+      const error = new Error('Add a counselor portal username with at least 3 letters or numbers.');
+      setAppError(error.message);
+      throw error;
+    }
+    try {
+      validateInitialPassword(counselor.initial_password);
+    } catch (error) {
+      setAppError(error.message);
+      throw error;
+    }
+
     if (!isSupabaseConfigured) {
       const counselorId = `u-counselor-${Date.now()}`;
       const nextCounselor = {
         id: counselorId,
         name: counselor.full_name,
         email: counselor.email,
-        portal_username: normalizePortalUsername(counselor.email?.split('@')[0] || counselor.full_name),
+        portal_username: portalUsername,
         role: 'counselor',
         manager_id: currentUser.id,
         organization_id: currentUser.organization_id,
@@ -929,10 +967,11 @@ export function AppStateProvider({ children }) {
         manager_id: currentUser.id,
         full_name: counselor.full_name,
         email: counselor.email,
-        portal_username: normalizePortalUsername(counselor.email?.split('@')[0] || counselor.full_name),
+        portal_username: portalUsername,
+        auth_login_email: portalLoginEmail(portalUsername),
         requested_by: currentUser.id,
         status: 'active',
-        note: 'Demo counselor account created.',
+        note: 'Demo counselor login created.',
         created_at: new Date().toISOString(),
       };
       setUsers((prev) => [nextCounselor, ...prev]);
@@ -947,10 +986,10 @@ export function AppStateProvider({ children }) {
       manager_id: currentUser.id,
       full_name: counselor.full_name,
       email: counselor.email,
-      portal_username: normalizePortalUsername(counselor.email?.split('@')[0] || counselor.full_name),
+      portal_username: portalUsername,
       requested_by: currentUser.id,
-      status: 'needs_auth_user',
-      note: 'Ready for Videshway admin invite.',
+      status: 'needs_login_creation',
+      note: 'Ready for direct counselor login creation.',
     };
     const { data, error } = await supabase.from('account_requests').insert(payload).select('*').single();
     if (error) {
@@ -958,7 +997,8 @@ export function AppStateProvider({ children }) {
       throw error;
     }
     setAccountRequests((prev) => [data, ...prev]);
-    return data;
+    const created = await createAccountLogin(data.id, counselor.initial_password);
+    return { ...data, ...created };
   }
 
   async function updateAccountRequest(requestId, status) {
@@ -993,36 +1033,59 @@ export function AppStateProvider({ children }) {
     setAccountRequests((prev) => prev.map((request) => (request.id === requestId ? data : request)));
   }
 
-  async function sendAccountInvite(requestId) {
+  async function createAccountLogin(requestId, password) {
     requireUser(currentUser);
     setAppError('');
 
-    if (currentUser.role !== 'admin') {
-      const error = new Error('Only Videshway admin can send account invites.');
+    try {
+      validateInitialPassword(password);
+    } catch (error) {
+      setAppError(error.message);
+      throw error;
+    }
+
+    const request = accountRequests.find((item) => item.id === requestId);
+    const canManagerCreateCounselor = currentUser.role === 'manager'
+      && request?.role === 'counselor'
+      && request?.requested_by === currentUser.id;
+    if (currentUser.role !== 'admin' && !canManagerCreateCounselor) {
+      const error = new Error('Only Videshway admin can create manager logins. Partner managers can create their own counselor login.');
       setAppError(error.message);
       throw error;
     }
 
     if (!isSupabaseConfigured) {
       setAccountRequests((prev) => prev.map((request) => (
-        request.id === requestId ? { ...request, status: 'invited', note: 'Demo invite sent.' } : request
+        request.id === requestId ? { ...request, status: 'active', note: 'Demo login created.' } : request
       )));
-      return { ok: true };
+      return { ok: true, ...request };
     }
 
     const { data, error } = await supabase.functions.invoke('invite-user', {
-      body: { account_request_id: requestId },
+      body: { account_request_id: requestId, password },
     });
 
     if (error) {
-      setAppError(error.message);
-      throw error;
+      let message = error.message;
+      if (error.context?.json) {
+        const details = await error.context.json().catch(() => null);
+        message = details?.error || message;
+      }
+      setAppError(message);
+      throw new Error(message);
+    }
+
+    if (data?.error) {
+      setAppError(data.error);
+      throw new Error(data.error);
     }
 
     await refreshData();
-    await logAuditEvent('account_requests', requestId, 'invite_email_sent', { account_request_id: requestId });
+    await logAuditEvent('account_requests', requestId, 'login_created', { account_request_id: requestId });
     return data;
   }
+
+  const sendAccountInvite = createAccountLogin;
 
   async function createStudentInvite(studentId) {
     requireUser(currentUser);
@@ -1929,6 +1992,7 @@ export function AppStateProvider({ children }) {
     addPartnerAccount,
     requestCounselorAccount,
     updateAccountRequest,
+    createAccountLogin,
     sendAccountInvite,
     createStudentInvite,
     addStudent,
