@@ -32,6 +32,7 @@ function mapProfile(profile) {
     id: profile.id,
     name: profile.full_name,
     email: profile.email,
+    portal_username: profile.portal_username || '',
     role: profile.role,
     organization_id: profile.organization_id,
     manager_id: profile.manager_id,
@@ -89,6 +90,24 @@ function mapCourse(course) {
 
 function normalizeCourseValue(value) {
   return String(value || '').trim().replace(/\s+/g, ' ');
+}
+
+function normalizePortalUsername(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[._-]+|[._-]+$/g, '')
+    .slice(0, 48);
+}
+
+function partnerPortalUsername(partner) {
+  const explicit = normalizePortalUsername(partner.portal_username);
+  if (explicit) return explicit;
+  const company = normalizePortalUsername(partner.organization_name);
+  if (company) return company;
+  return normalizePortalUsername(partner.email?.split('@')[0] || partner.full_name);
 }
 
 function courseIdentityKey(course) {
@@ -385,7 +404,7 @@ export function AppStateProvider({ children }) {
         auditEventsResult,
         studentInvitesResult,
       ] = await Promise.all([
-        supabase.from('profiles').select('id, organization_id, manager_id, full_name, email, role, is_active').eq('is_active', true).order('full_name'),
+        supabase.from('profiles').select('id, organization_id, manager_id, full_name, email, role, is_active, portal_username').eq('is_active', true).order('full_name'),
         supabase.from('organizations').select('*').order('created_at', { ascending: false }),
         supabase.from('account_requests').select('*').order('created_at', { ascending: false }),
         supabase.from('students').select('*').order('updated_at', { ascending: false }).range(0, 49),
@@ -528,7 +547,7 @@ export function AppStateProvider({ children }) {
       setAppError('');
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, organization_id, manager_id, full_name, email, role, is_active')
+        .select('id, organization_id, manager_id, full_name, email, role, is_active, portal_username')
         .eq('id', session.user.id)
         .eq('is_active', true)
         .single();
@@ -782,6 +801,13 @@ export function AppStateProvider({ children }) {
       throw error;
     }
 
+    const portalUsername = partnerPortalUsername(partner);
+    if (!portalUsername || portalUsername.length < 3) {
+      const error = new Error('Add a portal username with at least 3 letters or numbers.');
+      setAppError(error.message);
+      throw error;
+    }
+
     if (!isSupabaseConfigured) {
       const organizationId = `org-${Date.now()}`;
       const managerId = `u-manager-${Date.now()}`;
@@ -798,6 +824,7 @@ export function AppStateProvider({ children }) {
         id: managerId,
         name: partner.full_name,
         email: partner.email,
+        portal_username: portalUsername,
         role: 'manager',
         organization_id: organizationId,
       };
@@ -808,6 +835,7 @@ export function AppStateProvider({ children }) {
         organization_name: partner.organization_name,
         full_name: partner.full_name,
         email: partner.email,
+        portal_username: portalUsername,
         requested_by: currentUser.id,
         status: 'active',
         note: 'Demo manager account created.',
@@ -842,6 +870,7 @@ export function AppStateProvider({ children }) {
       organization_name: partner.organization_name,
       full_name: partner.full_name,
       email: partner.email,
+      portal_username: portalUsername,
       requested_by: currentUser.id,
       status: 'needs_auth_user',
       note: 'Ready for secure invite. Use Send invite to create Auth user and profile.',
@@ -887,6 +916,7 @@ export function AppStateProvider({ children }) {
         id: counselorId,
         name: counselor.full_name,
         email: counselor.email,
+        portal_username: normalizePortalUsername(counselor.email?.split('@')[0] || counselor.full_name),
         role: 'counselor',
         manager_id: currentUser.id,
         organization_id: currentUser.organization_id,
@@ -899,6 +929,7 @@ export function AppStateProvider({ children }) {
         manager_id: currentUser.id,
         full_name: counselor.full_name,
         email: counselor.email,
+        portal_username: normalizePortalUsername(counselor.email?.split('@')[0] || counselor.full_name),
         requested_by: currentUser.id,
         status: 'active',
         note: 'Demo counselor account created.',
@@ -916,6 +947,7 @@ export function AppStateProvider({ children }) {
       manager_id: currentUser.id,
       full_name: counselor.full_name,
       email: counselor.email,
+      portal_username: normalizePortalUsername(counselor.email?.split('@')[0] || counselor.full_name),
       requested_by: currentUser.id,
       status: 'needs_auth_user',
       note: 'Ready for Videshway admin invite.',
