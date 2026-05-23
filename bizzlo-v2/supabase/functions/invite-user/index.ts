@@ -17,6 +17,16 @@ async function resolveUserIdByEmail(adminClient: ReturnType<typeof createClient>
   return data.users.find((user) => user.email?.toLowerCase() === email)?.id || null;
 }
 
+function normalizePortalUsername(value: unknown) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[._-]+|[._-]+$/g, "")
+    .slice(0, 48);
+}
+
 export async function handleInviteUser(request: Request) {
   try {
     if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) });
@@ -57,11 +67,14 @@ export async function handleInviteUser(request: Request) {
 
   const email = String(accountRequest.email || "").trim().toLowerCase();
   if (!email) return json(request, { error: "Account request has no email." }, 400);
+  const portalUsername = normalizePortalUsername(accountRequest.portal_username || email.split("@")[0]);
+  if (portalUsername.length < 3) return json(request, { error: "Account request has no valid portal username." }, 400);
 
   const inviteResult = await adminClient.auth.admin.inviteUserByEmail(email, {
     redirectTo: `${siteUrl}/`,
     data: {
       full_name: accountRequest.full_name,
+      portal_username: portalUsername,
       role: accountRequest.role,
       organization_id: accountRequest.organization_id,
     },
@@ -80,6 +93,7 @@ export async function handleInviteUser(request: Request) {
     manager_id: accountRequest.role === "counselor" ? accountRequest.manager_id : null,
     full_name: accountRequest.full_name,
     email,
+    portal_username: portalUsername,
     role: accountRequest.role,
     is_active: true,
   });
@@ -101,7 +115,8 @@ export async function handleInviteUser(request: Request) {
     .from("account_requests")
     .update({
       status: "invited",
-      note: `Invite email sent to ${email}.`,
+      portal_username: portalUsername,
+      note: `Invite email sent to ${email}. Portal username: ${portalUsername}.`,
     })
     .eq("id", accountRequestId);
   if (updateError) return json(request, { error: updateError.message }, 400);
@@ -109,6 +124,7 @@ export async function handleInviteUser(request: Request) {
   return json(request, {
     ok: true,
     email,
+    portal_username: portalUsername,
     user_id: userId,
   });
   } catch (error) {
