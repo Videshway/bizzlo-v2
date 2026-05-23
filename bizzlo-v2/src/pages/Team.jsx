@@ -40,6 +40,7 @@ export function Team() {
     createAccountLogin,
     requestCounselorAccount,
     updateAccountRequest,
+    updatePartnerSeatLimit,
     users,
   } = useAppState();
   const [partner, setPartner] = useState(emptyPartner);
@@ -179,6 +180,7 @@ export function Team() {
                   const counselors = users.filter((user) => user.role === 'counselor' && user.organization_id === organization.id);
                   const portalLogin = manager?.portal_username || managerRequest?.portal_username || 'Awaiting allocation';
                   const loginEmail = manager?.email || managerRequest?.email || 'Invite not sent';
+                  const seatLimit = Number(organization.counselor_limit || 1);
                   return (
                     <article className="partner-card" key={organization.id}>
                       <div>
@@ -186,9 +188,17 @@ export function Team() {
                         <strong>{organization.name}</strong>
                         <Badge tone={organization.status === 'active' ? 'success' : 'warning'}>{organization.status || 'active'}</Badge>
                       </div>
-                      <span>Manager: {manager?.name || managerRequest?.full_name || 'Awaiting setup'} - Counselors: {counselors.length}/{organization.counselor_limit || 1}</span>
+                      <span>Manager: {manager?.name || managerRequest?.full_name || 'Awaiting setup'} - Counselors: {counselors.length}/{seatLimit}</span>
                       <span>Portal username: {portalLogin} - Email: {loginEmail}</span>
                       <span>Password: set by admin. Use Create login again with a new password to reset.</span>
+                      <label className="field compact-field">
+                        <span>Counselor seats</span>
+                        <select value={seatLimit} onChange={(event) => updatePartnerSeatLimit(organization.id, event.target.value).catch(() => {})}>
+                          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((count) => (
+                            <option key={count} value={count}>{count} {count === 1 ? 'seat' : 'seats'}</option>
+                          ))}
+                        </select>
+                      </label>
                     </article>
                   );
                 })}
