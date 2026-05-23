@@ -6,6 +6,7 @@ const migration7 = new URL('../../supabase/migrations/007_portal_otp.sql', impor
 const migration8 = new URL('../../supabase/migrations/008_security_plumbing.sql', import.meta.url);
 const migration9 = new URL('../../supabase/migrations/009_indexes_and_cron.sql', import.meta.url);
 const migration10 = new URL('../../supabase/migrations/010_data_rights.sql', import.meta.url);
+const migration11 = new URL('../../supabase/migrations/011_partner_portal_identity.sql', import.meta.url);
 
 test('007 creates OTP and throttle tables', async () => {
   const source = await readFile(migration7, 'utf8');
@@ -56,4 +57,11 @@ test('010 creates erasure event tracking', async () => {
   const source = await readFile(migration10, 'utf8');
   assert.match(source, /data_erasure_events/);
   assert.match(source, /target_type/);
+});
+
+test('011 stores partner portal usernames on requests and profiles', async () => {
+  const source = await readFile(migration11, 'utf8');
+  assert.match(source, /portal_username/);
+  assert.match(source, /idx_profiles_portal_username_unique/);
+  assert.match(source, /account_requests_portal_username_format/);
 });
