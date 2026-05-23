@@ -997,7 +997,7 @@ export function AppStateProvider({ children }) {
       throw error;
     }
     setAccountRequests((prev) => [data, ...prev]);
-    const created = await createAccountLogin(data.id, counselor.initial_password);
+    const created = await createAccountLogin(data.id, counselor.initial_password, data);
     return { ...data, ...created };
   }
 
@@ -1033,7 +1033,7 @@ export function AppStateProvider({ children }) {
     setAccountRequests((prev) => prev.map((request) => (request.id === requestId ? data : request)));
   }
 
-  async function createAccountLogin(requestId, password) {
+  async function createAccountLogin(requestId, password, requestOverride = null) {
     requireUser(currentUser);
     setAppError('');
 
@@ -1044,7 +1044,7 @@ export function AppStateProvider({ children }) {
       throw error;
     }
 
-    const request = accountRequests.find((item) => item.id === requestId);
+    const request = requestOverride || accountRequests.find((item) => item.id === requestId);
     const canManagerCreateCounselor = currentUser.role === 'manager'
       && request?.role === 'counselor'
       && request?.requested_by === currentUser.id;
