@@ -63,3 +63,11 @@ test('Documents page refreshes admin queue and surfaces download errors', async 
   assert.match(source, /setDownloadError/);
   assert.doesNotMatch(source, /handleDownload\(documentRow\.id\)\.catch\(\(\) => \{\}\)/);
 });
+
+test('Documents page prepares downloads from the user click before signed-url lookup finishes', async () => {
+  const source = await readFile(documentsPath, 'utf8');
+
+  assert.match(source, /window\.open\('about:blank', '_blank'\)/);
+  assert.match(source, /triggerDownload\(download, preparedWindow\)/);
+  assert.match(source, /preparedWindow\.location\.href = url/);
+});
