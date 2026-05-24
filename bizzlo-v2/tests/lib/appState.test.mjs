@@ -40,7 +40,9 @@ test('sign in tries portal username fallback for email identifiers', async () =>
 test('Course Finder full catalogue loads in pages without shrinking sync data', async () => {
   const source = await readFile(sourcePath, 'utf8');
 
-  assert.match(source, /const courseCatalogPageSize = 1000/);
+  assert.match(source, /const courseCatalogPageSize = 5000/);
+  assert.match(source, /const courseCatalogUiFlushRows = 5000/);
   assert.match(source, /async \(options = \{\}\) =>/);
-  assert.match(source, /mergeCourseRows\(current, mappedRows\)/);
+  assert.match(source, /mergeCourseRows\(current, rowsToFlush\)/);
+  assert.match(source, /effectivePageSize = mappedRows\.length/);
 });
