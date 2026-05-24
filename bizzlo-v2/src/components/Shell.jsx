@@ -1,9 +1,6 @@
 import {
   Bell,
-  BookOpen,
   BriefcaseBusiness,
-  ClipboardPenLine,
-  ClipboardList,
   FileText,
   GraduationCap,
   Landmark,
@@ -24,18 +21,31 @@ import { useAppState } from '../lib/appState';
 
 const nav = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'manager', 'counselor'] },
-  { id: 'intake', label: 'Intake', icon: ClipboardPenLine, roles: ['admin', 'manager', 'counselor'] },
   { id: 'students', label: 'Students', icon: Users, roles: ['admin', 'manager', 'counselor'] },
   { id: 'applications', label: 'Applications', icon: FileText, roles: ['admin', 'manager', 'counselor'] },
   { id: 'documents', label: 'Documents', icon: UploadCloud, roles: ['admin', 'manager', 'counselor'] },
   { id: 'courses', label: 'Program Search', icon: Search, roles: ['admin', 'manager', 'counselor'] },
-  { id: 'team', label: 'Team & Partners', icon: UsersRound, roles: ['admin', 'manager', 'counselor'] },
-  { id: 'tasks', label: 'Tasks', icon: ClipboardList, roles: ['admin', 'manager', 'counselor'] },
+  { id: 'team', label: 'Team & Partners', icon: UsersRound, roles: ['admin', 'manager'] },
   { id: 'commissions', label: 'Finance', icon: Landmark, roles: ['admin', 'manager'] },
-  { id: 'resources', label: '360 Solutions', icon: BookOpen, roles: ['admin', 'manager', 'counselor'] },
   { id: 'support', label: 'Support', icon: LifeBuoy, roles: ['admin', 'manager', 'counselor'] },
   { id: 'audit', label: 'Audit', icon: ShieldCheck, roles: ['admin'] },
 ];
+
+const adminDecisionStatuses = new Set([
+  'pending_admin_review',
+  'submitted_to_university',
+  'awaiting_decision',
+  'offer_received',
+  'offer_rejected',
+  'conditional_offer',
+  'unconditional_offer',
+  'deposit_paid',
+  'cas_issued',
+  'visa_filed',
+  'visa_granted',
+  'enrolled',
+  'rejected',
+]);
 
 export function Shell({ activePage, onNavigate, children }) {
   const {
@@ -48,16 +58,77 @@ export function Shell({ activePage, onNavigate, children }) {
     setCurrentUser,
     signOut,
     users,
+    visibleApplicationNotes,
     visibleApplications,
     visibleDocuments,
-    visibleTasks,
+    visibleStudents,
   } = useAppState();
   const [alertsOpen, setAlertsOpen] = useState(false);
   const items = nav.filter((item) => item.roles.includes(currentUser.role));
-  const openTasks = visibleTasks.filter((task) => task.status === 'open').length;
-  const reviewApplications = visibleApplications.filter((application) => ['pending_admin_review', 'documents_pending', 'admin_changes_requested'].includes(application.status));
-  const reviewDocuments = visibleDocuments.filter((document) => ['uploaded', 'rejected'].includes(document.status));
-  const alertCount = openTasks + reviewApplications.length + reviewDocuments.length;
+  const studentName = (studentId) => {
+    const student = visibleStudents.find((item) => item.id === studentId);
+    return student ? `${student.first_name} ${student.last_name}` : 'Student file';
+  };
+  const applicationName = (application) => `${studentName(application.student_id)} · ${application.university || 'Application'}`;
+  const practicalAlerts = [
+    ...(currentUser.role === 'admin'
+      ? visibleApplications
+        .filter((application) => ['ready_for_admin_review', 'pending_admin_review'].includes(application.status))
+        .map((application) => ({
+          id: `app-${application.id}`,
+          icon: FileText,
+          page: 'applications',
+          title: applicationName(application),
+          detail: application.status === 'ready_for_admin_review' ? 'Partner sent documents for admin decision' : labelFor(application.status),
+        }))
+      : visibleApplications
+        .filter((application) => application.status === 'admin_changes_requested' || adminDecisionStatuses.has(application.status))
+        .map((application) => ({
+          id: `app-${application.id}`,
+          icon: FileText,
+          page: 'applications',
+          title: applicationName(application),
+          detail: application.status === 'admin_changes_requested' ? 'Admin requested changes' : `Admin update: ${labelFor(application.status)}`,
+        }))),
+    ...(currentUser.role === 'admin'
+      ? visibleDocuments
+        .filter((document) => document.status === 'uploaded')
+        .map((document) => ({
+          id: `doc-${document.id}`,
+          icon: UploadCloud,
+          page: 'documents',
+          title: `${studentName(document.student_id)} · ${document.type}`,
+          detail: 'Document waiting for admin approval',
+        }))
+      : visibleDocuments
+        .filter((document) => document.status === 'rejected')
+        .map((document) => ({
+          id: `doc-${document.id}`,
+          icon: UploadCloud,
+          page: 'documents',
+          title: `${studentName(document.student_id)} · ${document.type}`,
+          detail: document.note || 'Admin rejected this document. Re-upload needed.',
+        }))),
+    ...(currentUser.role === 'admin'
+      ? []
+      : visibleApplicationNotes
+        .filter((note) => {
+          const actor = users.find((user) => user.id === note.author_id);
+          return actor?.role === 'admin' || /admin|videshway/i.test(note.author_name || '');
+        })
+        .slice(0, 6)
+        .map((note) => {
+          const application = visibleApplications.find((item) => item.id === note.application_id);
+          return {
+            id: `note-${note.id}`,
+            icon: FileText,
+            page: 'applications',
+            title: application ? applicationName(application) : 'Admin note',
+            detail: note.body || 'Admin added an application update',
+          };
+        })),
+  ].slice(0, 12);
+  const alertCount = practicalAlerts.length;
 
   return (
     <div className="app-shell">
@@ -84,7 +155,6 @@ export function Shell({ activePage, onNavigate, children }) {
               >
                 <Icon size={18} />
                 <span>{item.label}</span>
-                {item.id === 'tasks' && openTasks > 0 ? <small>{openTasks}</small> : null}
               </button>
             );
           })}
@@ -118,24 +188,15 @@ export function Shell({ activePage, onNavigate, children }) {
                   <span>{alertCount} open item(s)</span>
                 </header>
                 <div>
-                  {reviewApplications.slice(0, 4).map((application) => (
-                    <button key={application.id} type="button" onClick={() => { setAlertsOpen(false); onNavigate('applications'); }}>
-                      <FileText size={15} />
-                      <span>{application.university}<small>{labelFor(application.status)}</small></span>
-                    </button>
-                  ))}
-                  {reviewDocuments.slice(0, 4).map((document) => (
-                    <button key={document.id} type="button" onClick={() => { setAlertsOpen(false); onNavigate('documents'); }}>
-                      <UploadCloud size={15} />
-                      <span>{document.type}<small>{labelFor(document.status === 'rejected' ? 'rejected_document' : document.status)}</small></span>
-                    </button>
-                  ))}
-                  {visibleTasks.filter((task) => task.status === 'open').slice(0, 4).map((task) => (
-                    <button key={task.id} type="button" onClick={() => { setAlertsOpen(false); onNavigate('tasks'); }}>
-                      <ClipboardList size={15} />
-                      <span>{task.title}<small>Due {task.due}</small></span>
-                    </button>
-                  ))}
+                  {practicalAlerts.map((alert) => {
+                    const Icon = alert.icon;
+                    return (
+                      <button key={alert.id} type="button" onClick={() => { setAlertsOpen(false); onNavigate(alert.page); }}>
+                        <Icon size={15} />
+                        <span>{alert.title}<small>{alert.detail}</small></span>
+                      </button>
+                    );
+                  })}
                   {!alertCount ? <p>No open alerts.</p> : null}
                 </div>
               </div>
