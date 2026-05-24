@@ -23,21 +23,26 @@ test('CourseFinder debounces search updates by 250ms', async () => {
   assert.match(source, /setTimeout\([\s\S]*250\)/);
 });
 
-test('CourseFinder loads the full catalog outside dashboard sync', async () => {
+test('CourseFinder exposes all partner countries without loading every course row', async () => {
   const source = await readFile(courseFinderPath, 'utf8');
-  assert.match(source, /loadFullCourseCatalog/);
+  assert.match(source, /partnerPdfCountries/);
+  assert.match(source, /United Kingdom/);
+  assert.match(source, /United States/);
+  assert.match(source, /Dubai/);
+  assert.match(source, /countries available/);
   assert.match(source, /loadCourseCatalogCount/);
-  assert.match(source, /Full catalogue has/);
-  assert.doesNotMatch(source, /await searchCourses\(/);
+  assert.doesNotMatch(source, /Full catalogue has/);
+  assert.doesNotMatch(source, /Load full catalogue/);
   assert.doesNotMatch(source, /useEffect\(\(\) => \{\s*loadFullCourseCatalog\?\.\(\)/);
 });
 
 test('CourseFinder searches live catalog without forcing all rows into the browser', async () => {
   const source = await readFile(courseFinderPath, 'utf8');
-  assert.match(source, /await searchCourses\?\.\(\{/);
+  assert.match(source, /searchCourses\?\.\(\{/);
   assert.match(source, /liveSearchPageSize = 100/);
   assert.match(source, /Load more live results/);
   assert.match(source, /append: true/);
+  assert.match(source, /\[country, intakeFilter, level, query, searchCourses\]/);
   assert.match(source, /Apply to selected/);
   assert.match(source, /Choose a student profile before applying/);
 });
