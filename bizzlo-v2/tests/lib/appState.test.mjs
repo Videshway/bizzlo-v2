@@ -56,3 +56,22 @@ test('new student codes do not reuse the visible student count', async () => {
   assert.match(source, /students_student_code_key/);
   assert.doesNotMatch(source, /students\.length \+ 1/);
 });
+
+test('course apply returns without waiting for a full dashboard refresh', async () => {
+  const source = await readFile(sourcePath, 'utf8');
+  const addApplicationBlock = source.match(/async function addApplication[\s\S]*?async function addCourse/)?.[0] || '';
+
+  assert.match(addApplicationBlock, /setApplications\(\(prev\) => \[data, \.\.\.prev\]\)/);
+  assert.match(addApplicationBlock, /refreshDataRef\.current\(\)\.catch/);
+  assert.doesNotMatch(addApplicationBlock, /await refreshData\(\)/);
+});
+
+test('document refresh is targeted for admin review queues', async () => {
+  const source = await readFile(sourcePath, 'utf8');
+
+  assert.match(source, /const loadDocuments = useCallback/);
+  assert.match(source, /refreshDocumentsRef/);
+  assert.match(source, /scheduleDocumentsRefresh/);
+  assert.match(source, /refreshDocuments: loadDocuments/);
+  assert.match(source, /\.from\('documents'\)[\s\S]*?\.range\(0, 249\)/);
+});
