@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.76.1";
 
 export const siteUrl = () => Deno.env.get("SITE_URL") || "https://bizzlo.co";
+const canonicalOrigins = new Set(["https://bizzlo.co", "https://www.bizzlo.co"]);
 
 export function requestId(request: Request) {
   return request.headers.get("x-bizzlo-request-id") || crypto.randomUUID();
@@ -14,7 +15,7 @@ export function clientIp(request: Request) {
 
 export function allowedOrigin(request: Request) {
   const origin = request.headers.get("origin") || siteUrl();
-  if (origin === siteUrl() || /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)) return origin;
+  if (origin === siteUrl() || canonicalOrigins.has(origin) || /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)) return origin;
   return siteUrl();
 }
 
@@ -54,7 +55,7 @@ export function userClient(authorization: string) {
   const { supabaseUrl, anonKey } = env();
   if (!anonKey) throw new Error("Missing Supabase anon key.");
   return createClient(supabaseUrl, anonKey, {
-    global: { headers: { authorization } },
+    global: { headers: { Authorization: authorization } },
     auth: { persistSession: false },
   });
 }
@@ -138,4 +139,3 @@ export function logEdgeEvent(request: Request, event: string, metadata: Record<s
     ...metadata,
   }));
 }
-

@@ -54,6 +54,7 @@ test('shared security validates Turnstile and rate buckets', async () => {
   assert.match(source, /siteverify/);
   assert.match(source, /edge_check_rate_limit/);
   assert.match(source, /max_count/);
+  assert.match(source, /https:\/\/www\.bizzlo\.co/);
 });
 
 test('shared security cookie is HttpOnly and Secure', async () => {

@@ -34,6 +34,12 @@ export const statusLabels = {
   in_progress: 'In progress',
   completed: 'Completed',
   verified: 'Verified',
+  not_submitted: 'Not submitted',
+  submitted: 'Submitted',
+  accepted: 'Accepted',
+  pending: 'Pending',
+  not_due: 'Not due',
+  held: 'Held',
 };
 
 export const statusTone = {
@@ -73,6 +79,12 @@ export const statusTone = {
   in_progress: 'warning',
   completed: 'success',
   verified: 'success',
+  not_submitted: 'neutral',
+  submitted: 'info',
+  accepted: 'success',
+  pending: 'warning',
+  not_due: 'neutral',
+  held: 'warning',
 };
 
 export function labelFor(value) {

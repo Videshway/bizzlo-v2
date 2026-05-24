@@ -1,6 +1,7 @@
 import { Building2, CheckCircle2, ClipboardList, FileText, Landmark, UploadCloud, Users } from 'lucide-react';
 import { referenceActions } from '../data/referenceWorkflow';
 import { useAppState } from '../lib/appState';
+import { canManageFinance, canManagePartners } from '../lib/roles';
 import { money } from '../lib/status';
 import { Panel, StatCard, StatusBadge } from '../components/ui';
 
@@ -25,6 +26,8 @@ export function Dashboard({ onNavigate }) {
   const commissionTotal = visibleCommissions.reduce((sum, item) => sum + Number(item.expected_amount || 0), 0);
   const payoutCurrency = visibleCommissions[0]?.currency || visiblePartnerFinanceProfiles[0]?.payout_currency || 'INR';
   const partnerOrgs = organizations.filter((organization) => organization.kind !== 'admin');
+  const financeVisible = currentUser.role === 'manager' || canManageFinance(currentUser, users);
+  const partnerOwner = canManagePartners(currentUser, users);
 
   return (
     <div className="page-grid">
@@ -42,7 +45,7 @@ export function Dashboard({ onNavigate }) {
         <StatCard icon={Users} label="Students" value={visibleStudents.length} hint="active files" tone="blue" />
         <StatCard icon={FileText} label="Applications" value={visibleApplications.length} hint={`${pendingApps.length} need movement`} tone="orange" />
         <StatCard icon={UploadCloud} label="Document issues" value={documentIssues.length} hint="needs correction" tone="red" />
-        {currentUser.role !== 'counselor' ? (
+        {financeVisible ? (
           <StatCard icon={Landmark} label="Commission" value={money(commissionTotal, payoutCurrency)} hint="visible pipeline" tone="green" />
         ) : (
           <StatCard icon={ClipboardList} label="Open tasks" value={visibleTasks.filter((task) => task.status === 'open').length} hint="assigned work" tone="violet" />
@@ -53,7 +56,7 @@ export function Dashboard({ onNavigate }) {
         <div className="action-grid">
           {referenceActions
             .filter((action) => action.id !== 'resources')
-            .filter((action) => currentUser.role !== 'counselor' || action.id !== 'commissions')
+            .filter((action) => action.id !== 'commissions' || financeVisible)
             .map((action) => {
               const Icon = action.icon;
               return (
@@ -98,7 +101,7 @@ export function Dashboard({ onNavigate }) {
         </Panel>
       </div>
 
-      {currentUser.role === 'admin' ? (
+      {partnerOwner ? (
         <Panel title="Partner Portal Access Board" description="Allocated partner manager usernames and sign-in emails for admin handoff.">
           <div className="stack-list">
             {partnerOrgs.slice(0, 6).map((organization) => {

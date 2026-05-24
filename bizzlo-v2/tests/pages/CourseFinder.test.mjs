@@ -23,7 +23,7 @@ test('CourseFinder debounces search updates by 250ms', async () => {
   assert.match(source, /setTimeout\([\s\S]*250\)/);
 });
 
-test('CourseFinder exposes all partner countries and loads the full catalogue in the background', async () => {
+test('CourseFinder exposes all partner countries without forcing the full catalogue into the browser', async () => {
   const source = await readFile(courseFinderPath, 'utf8');
   assert.match(source, /partnerPdfCountries/);
   assert.match(source, /United Kingdom/);
@@ -31,8 +31,8 @@ test('CourseFinder exposes all partner countries and loads the full catalogue in
   assert.match(source, /Dubai/);
   assert.match(source, /countries available/);
   assert.match(source, /loadCourseCatalogCount/);
-  assert.match(source, /loadFullCourseCatalog/);
-  assert.match(source, /Loading full partner catalogue/);
+  assert.doesNotMatch(source, /loadFullCourseCatalog\?\.\(\)/);
+  assert.doesNotMatch(source, /Loading full partner catalogue/);
   assert.doesNotMatch(source, /Full catalogue has/);
   assert.doesNotMatch(source, /Load full catalogue/);
 });
@@ -47,6 +47,8 @@ test('CourseFinder searches live catalog first while the full catalog fills in',
   assert.match(source, /\[country, intakeFilter, level, query\]/);
   assert.match(source, /Apply to selected/);
   assert.match(source, /Choose a student profile before applying/);
+  assert.match(source, /courseTuitionLabel/);
+  assert.match(source, /courseDeadlineLabel/);
 });
 
 test('demo seed exports at least 40 partner course rows', () => {

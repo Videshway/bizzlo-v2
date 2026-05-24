@@ -68,7 +68,13 @@ export async function handleInviteUser(request: Request) {
 
   if (requestError || !accountRequest) return json(request, { error: "Account request not found." }, 404);
 
-  const isAdmin = adminProfile.role === "admin";
+  const { count: superAdminCount } = await adminClient
+    .from("profiles")
+    .select("id", { count: "exact", head: true })
+    .eq("role", "super_admin")
+    .eq("is_active", true);
+  const isAdmin = adminProfile.role === "super_admin"
+    || (adminProfile.role === "admin" && (superAdminCount || 0) === 0);
   const isManagerCreatingOwnCounselor = adminProfile.role === "manager"
     && accountRequest.role === "counselor"
     && accountRequest.organization_id === adminProfile.organization_id

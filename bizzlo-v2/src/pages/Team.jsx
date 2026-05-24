@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Building2, CheckCircle2, UserPlus, UsersRound } from 'lucide-react';
 import { useAppState } from '../lib/appState';
+import { canManagePartners } from '../lib/roles';
 import { Badge, Panel, SelectInput, StatusBadge, TextInput } from '../components/ui';
 
 const emptyPartner = {
@@ -54,6 +55,7 @@ export function Team() {
   const counselorLimit = Number(currentOrg?.counselor_limit || 1);
   const usedCounselorSeats = managerCounselors.length;
   const canRequestCounselor = currentUser.role === 'manager' && usedCounselorSeats < counselorLimit;
+  const partnerOwner = canManagePartners(currentUser, users);
 
   function updatePartnerCompany(value) {
     setPartner((current) => ({
@@ -126,7 +128,7 @@ export function Team() {
       <div className="page-heading">
         <div>
           <h1>Team & Partners</h1>
-          <p>Videshway admin creates partner managers. Partner managers create counselor logins inside their own portal.</p>
+          <p>Super admin creates partner managers. Partner managers create counselor logins inside their own portal.</p>
         </div>
       </div>
 
@@ -148,7 +150,7 @@ export function Team() {
         </Panel>
       ) : null}
 
-      {currentUser.role === 'admin' ? (
+      {partnerOwner ? (
         <>
           <div className="dashboard-columns">
             <Panel title="Create Partner Manager" description="This creates the partner organization and active manager login immediately.">

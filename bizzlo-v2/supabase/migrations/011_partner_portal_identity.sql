@@ -6,6 +6,9 @@ add column if not exists portal_username text;
 alter table public.account_requests
 add column if not exists portal_username text;
 
+alter table public.account_requests
+add column if not exists auth_login_email text;
+
 update public.profiles
 set portal_username = lower(regexp_replace(split_part(email, '@', 1), '[^a-z0-9._-]+', '-', 'g'))
 where portal_username is null
@@ -20,6 +23,11 @@ update public.account_requests
 set portal_username = lower(regexp_replace(split_part(email, '@', 1), '[^a-z0-9._-]+', '-', 'g'))
 where portal_username is null
   and role = 'counselor';
+
+update public.account_requests
+set auth_login_email = portal_username || '@portal.bizzlo.co'
+where auth_login_email is null
+  and portal_username is not null;
 
 with duplicated_profiles as (
   select id,

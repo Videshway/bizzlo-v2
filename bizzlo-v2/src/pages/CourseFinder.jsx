@@ -30,6 +30,7 @@ import {
 import { intakeOptions } from '../data/formOptions';
 import { courseFilterHints } from '../data/referenceWorkflow';
 import { useAppState } from '../lib/appState';
+import { isAdminRole } from '../lib/roles';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { Badge, EmptyState, Modal, Panel, SelectInput, TextInput } from '../components/ui';
 
@@ -615,8 +616,8 @@ function downloadCourses(filename, rows, student) {
     course.level,
     course.intake,
     course.duration,
-    course.tuition,
-    course.deadline,
+    courseTuitionLabel(course),
+    courseDeadlineLabel(course),
     student ? `${student.first_name} ${student.last_name}` : '',
   ].map(csvCell).join(','));
   const blob = new Blob([[header.map(csvCell).join(','), ...body].join('\n')], { type: 'text/csv;charset=utf-8' });
@@ -628,6 +629,14 @@ function downloadCourses(filename, rows, student) {
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 500);
+}
+
+function courseTuitionLabel(course) {
+  return course?.tuition || 'Check tuition';
+}
+
+function courseDeadlineLabel(course) {
+  return course?.deadline || 'Rolling';
 }
 
 function fitForStudent(course, student) {
@@ -657,7 +666,6 @@ export function CourseFinder({ onNavigate }) {
     courses,
     currentUser,
     loadCourseCatalogCount,
-    loadFullCourseCatalog,
     searchCourses,
     visibleStudents,
   } = useAppState();
@@ -712,8 +720,7 @@ export function CourseFinder({ onNavigate }) {
 
   useEffect(() => {
     loadCourseCatalogCount?.().catch(() => {});
-    loadFullCourseCatalog?.().catch(() => {});
-  }, [loadCourseCatalogCount, loadFullCourseCatalog]);
+  }, [loadCourseCatalogCount]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -815,7 +822,7 @@ export function CourseFinder({ onNavigate }) {
   const compareCourses = partnerCourses.filter((course) => compareIds.has(course.id));
   const detailCommissionRule = detailCourse ? getCommissionRuleForCourse(detailCourse) : null;
   const courseCatalogueMissing = isSupabaseConfigured && partnerCourses.length === 0 && !courseCatalogStatus?.isLoadingFull;
-  const loadingFullCatalog = Boolean(courseCatalogStatus?.isLoadingFull);
+  const loadingLiveResults = catalogSearching;
   const totalCatalogCount = Math.max(courseCatalogStatus?.totalAvailable || 0, partnerCourses.length);
   const availableCountryCount = Math.max(catalogStats.countries, countries.length - 1);
 
@@ -938,6 +945,7 @@ export function CourseFinder({ onNavigate }) {
         intake: course.intake,
       });
       setApplySuccess(`Application created for ${selectedStudent.first_name} ${selectedStudent.last_name}.`);
+      setDetailCourse(null);
       onNavigate('applications');
     } catch (error) {
       setApplyError(error?.message || 'Could not create this application.');
@@ -993,7 +1001,7 @@ export function CourseFinder({ onNavigate }) {
         </div>
         <div>
           <strong>{partnerCourses.length.toLocaleString()}</strong>
-          <span>{loadingFullCatalog ? 'loading live matches' : 'live matches loaded'}</span>
+          <span>{loadingLiveResults ? 'searching live matches' : 'live matches loaded'}</span>
         </div>
         <div>
           <strong>{filtered.length.toLocaleString()}</strong>
@@ -1013,10 +1021,9 @@ export function CourseFinder({ onNavigate }) {
         </div>
       </div>
 
-      {loadingFullCatalog ? (
+      {loadingLiveResults ? (
         <div className="system-banner info">
-          Loading full partner catalogue: {(courseCatalogStatus?.totalLoaded || partnerCourses.length).toLocaleString()}
-          {courseCatalogStatus?.totalAvailable ? ` of ${courseCatalogStatus.totalAvailable.toLocaleString()}` : ''} programmes indexed.
+          Searching the live partner catalogue. Results are loaded in small batches so Program Search stays responsive.
         </div>
       ) : null}
 
@@ -1155,8 +1162,8 @@ export function CourseFinder({ onNavigate }) {
                 <dl>
                   <div><dt>Level</dt><dd>{course.level}</dd></div>
                   <div><dt>Intake</dt><dd>{course.intake}</dd></div>
-                  <div><dt>Tuition</dt><dd>{course.tuition || 'Check'}</dd></div>
-                  <div><dt>Deadline</dt><dd>{course.deadline || 'Rolling'}</dd></div>
+                  <div><dt>Tuition</dt><dd>{courseTuitionLabel(course)}</dd></div>
+                  <div><dt>Deadline</dt><dd>{courseDeadlineLabel(course)}</dd></div>
                   <div><dt>Partner status</dt><dd>{commissionRule ? commissionSummary(commissionRule) : 'Not mapped'}</dd></div>
                 </dl>
                 <div className="program-actions">
@@ -1238,8 +1245,8 @@ export function CourseFinder({ onNavigate }) {
                     <td>{course.level}</td>
                     <td>{course.duration || 'Check'}</td>
                     <td>{course.intake}</td>
-                    <td>{course.tuition || 'Check'}</td>
-                    <td>{course.deadline || 'Rolling'}</td>
+                    <td>{courseTuitionLabel(course)}</td>
+                    <td>{courseDeadlineLabel(course)}</td>
                     <td>
                       {commissionRule ? (
                         <>
@@ -1308,7 +1315,7 @@ export function CourseFinder({ onNavigate }) {
                   <dl>
                     <div><dt>Fit</dt><dd>{fit}%</dd></div>
                     <div><dt>Country</dt><dd>{course.country}</dd></div>
-                    <div><dt>Tuition</dt><dd>{course.tuition}</dd></div>
+                    <div><dt>Tuition</dt><dd>{courseTuitionLabel(course)}</dd></div>
                     <div><dt>Partner</dt><dd>{commissionRule ? 'Listed' : 'Not mapped'}</dd></div>
                     <div><dt>Listing</dt><dd>PDF listed</dd></div>
                   </dl>
@@ -1343,9 +1350,9 @@ export function CourseFinder({ onNavigate }) {
               <div><dt>Intakes</dt><dd>{detailCourse.intake}</dd></div>
               <div><dt>Duration</dt><dd>{detailCourse.duration || 'Check'}</dd></div>
               <div><dt>Campus</dt><dd>{detailCourse.campus || detailCourse.city}</dd></div>
-              <div><dt>Application deadline</dt><dd>{detailCourse.deadline || 'Rolling'}</dd></div>
+              <div><dt>Application deadline</dt><dd>{courseDeadlineLabel(detailCourse)}</dd></div>
               <div><dt>Application fee</dt><dd>{detailCourse.application_fee || 'Check university'}</dd></div>
-              <div><dt>Yearly tuition fee</dt><dd>{detailCourse.tuition || 'Check university'}</dd></div>
+              <div><dt>Yearly tuition fee</dt><dd>{courseTuitionLabel(detailCourse)}</dd></div>
               <div><dt>Partner status</dt><dd>{detailCommissionRule ? commissionSummary(detailCommissionRule) : 'Not mapped'}</dd></div>
               <div><dt>Eligibility proof</dt><dd>{detailCommissionRule ? 'Partner commission PDF' : 'Check admin index'}</dd></div>
               <div><dt>English requirement</dt><dd>{detailCourse.english_requirement || 'IELTS/PTE/TOEFL review required'}</dd></div>
@@ -1399,12 +1406,12 @@ export function CourseFinder({ onNavigate }) {
                 <Download size={15} />
                 Template
               </button>
-              <button className="primary-button" type="button" disabled={!importRows.length || submitting || currentUser.role !== 'admin'} onClick={() => handleBulkImport().catch(() => {})}>
+              <button className="primary-button" type="button" disabled={!importRows.length || submitting || !isAdminRole(currentUser.role)} onClick={() => handleBulkImport().catch(() => {})}>
                 <UploadCloud size={15} />
                 {submitting ? 'Importing...' : 'Import / update'}
               </button>
             </div>
-            {currentUser.role !== 'admin' ? <small>Only the Videshway admin account can import catalogue rows.</small> : null}
+            {!isAdminRole(currentUser.role) ? <small>Only Bizzlo admin accounts can import catalogue rows.</small> : null}
           </section>
 
           <section className="import-status-panel">
@@ -1434,7 +1441,7 @@ export function CourseFinder({ onNavigate }) {
         ) : null}
       </Modal>
 
-      {showAdminCatalogTools && currentUser.role === 'admin' ? (
+      {showAdminCatalogTools && isAdminRole(currentUser.role) ? (
         <>
           <Panel
             title="Partner Catalogue Readiness"

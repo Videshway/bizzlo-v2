@@ -4,6 +4,7 @@ import { intakeOptions } from '../data/formOptions';
 import { applicationStageAliases, applicationStages, requiredDocuments } from '../data/referenceWorkflow';
 import { useAppState } from '../lib/appState';
 import { labelFor, money } from '../lib/status';
+import { isAdminRole } from '../lib/roles';
 import { Badge, Modal, Panel, SelectInput, StatusBadge, TextInput } from '../components/ui';
 
 const adminStatuses = [
@@ -221,13 +222,14 @@ export function Applications() {
   }).length;
   const completion = Math.round((completedDocuments / requiredDocuments.length) * 100);
   const statusOptions = adminStatuses;
-  const canPartnerSendToAdmin = currentUser.role !== 'admin'
+  const adminUser = isAdminRole(currentUser.role);
+  const canPartnerSendToAdmin = !adminUser
     && selectedApplication
     && partnerSubmitStatuses.has(selectedApplication.status);
-  const partnerWaitingForAdmin = currentUser.role !== 'admin'
+  const partnerWaitingForAdmin = !adminUser
     && selectedApplication
     && adminReviewStatuses.has(selectedApplication.status);
-  const partnerStatusLocked = currentUser.role !== 'admin'
+  const partnerStatusLocked = !adminUser
     && selectedApplication
     && !canPartnerSendToAdmin
     && !partnerWaitingForAdmin;
@@ -324,7 +326,7 @@ export function Applications() {
         </section>
         <section>
           <span>Commission pipeline</span>
-          <strong>{money(visibleCommissions.reduce((sum, item) => sum + Number(item.expected_amount || 0), 0), visibleCommissions[0]?.currency || 'USD')}</strong>
+          <strong>{money(visibleCommissions.reduce((sum, item) => sum + Number(item.expected_amount || 0), 0), visibleCommissions[0]?.currency || 'INR')}</strong>
         </section>
       </div>
 
@@ -399,7 +401,7 @@ export function Applications() {
                   <h2>{selectedStudent?.first_name} {selectedStudent?.last_name}</h2>
                   <p>{selectedStudent?.email} · {selectedStudent?.study_level} · {selectedStudent?.discipline}</p>
                 </div>
-                {currentUser.role === 'admin' ? (
+                {adminUser ? (
                   <label className="field compact-select">
                     <span>Status</span>
                     <select value={selectedApplication.status} onChange={(event) => updateApplicationStatus(selectedApplication.id, event.target.value).catch(() => {})}>
@@ -552,7 +554,7 @@ export function Applications() {
                     <td>{application.course}</td>
                     <td>{application.intake}</td>
                     <td><StatusBadge value={application.status} /></td>
-                    <td>{currentUser.role === 'admin' ? 'Videshway Admin' : currentUser.name}<small>{labelFor(application.fee_status)} fee</small></td>
+                    <td>{adminUser ? 'Videshway Admin' : currentUser.name}<small>{labelFor(application.fee_status)} fee</small></td>
                   </tr>
                 );
               })}

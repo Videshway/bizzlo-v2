@@ -15,7 +15,8 @@ test('AuthScreen submits credentials through signIn', async () => {
   const source = await readFile(sourcePath, 'utf8');
 
   assert.match(source, /await signIn\(form\.email, form\.password\)/);
-  assert.match(source, /type="email"/);
+  assert.match(source, /Username or email/);
+  assert.match(source, /type="text"/);
   assert.match(source, /type="password"/);
 });
 

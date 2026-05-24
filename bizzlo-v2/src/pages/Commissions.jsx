@@ -8,6 +8,7 @@ import {
 } from '../data/commissionRules';
 import { applicationStageAliases, paymentMilestones } from '../data/referenceWorkflow';
 import { useAppState } from '../lib/appState';
+import { canManageFinance } from '../lib/roles';
 import { labelFor, money } from '../lib/status';
 import { Badge, EmptyState, Modal, Panel, SelectInput, StatusBadge, TextInput } from '../components/ui';
 
@@ -149,10 +150,13 @@ export function Commissions() {
     visibleCommissions,
     visiblePartnerFinanceProfiles,
     visibleStudents,
-    updateCommission,
+    reviewCommissionInvoice,
+    submitCommissionInvoice,
     updatePartnerFinanceProfile,
   } = useAppState();
-  const [view, setView] = useState(currentUser.role === 'admin' ? 'partners' : 'profile');
+  const financeOwner = canManageFinance(currentUser, users);
+  const managerUser = currentUser.role === 'manager';
+  const [view, setView] = useState(financeOwner ? 'partners' : 'profile');
   const [country, setCountry] = useState('All');
   const [year, setYear] = useState('2026');
   const [intake, setIntake] = useState('All');
@@ -162,6 +166,8 @@ export function Commissions() {
   const [serviceTab, setServiceTab] = useState(alliedServiceRows[0].category);
   const [ruleRows, setRuleRows] = useState(commissionStructureRows);
   const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [invoiceDrafts, setInvoiceDrafts] = useState({});
+  const [reviewDrafts, setReviewDrafts] = useState({});
 
   useEffect(() => {
     let active = true;
@@ -208,11 +214,37 @@ export function Commissions() {
     return haystack.includes(paymentQuery.toLowerCase());
   });
   const selectedServiceRows = alliedServiceRows.filter((row) => row.category === serviceTab);
-  const activeView = currentUser.role === 'admin' && view === 'profile'
+  const activeView = financeOwner && view === 'profile'
     ? 'partners'
-    : currentUser.role === 'manager' && view === 'partners'
+    : !financeOwner && view === 'partners'
       ? 'profile'
       : view;
+
+  function updateInvoiceDraft(commissionId, field, value) {
+    setInvoiceDrafts((current) => ({
+      ...current,
+      [commissionId]: { ...(current[commissionId] || {}), [field]: value },
+    }));
+  }
+
+  function updateReviewDraft(commissionId, field, value) {
+    setReviewDrafts((current) => ({
+      ...current,
+      [commissionId]: { ...(current[commissionId] || {}), [field]: value },
+    }));
+  }
+
+  async function submitInvoice(commission) {
+    const draft = invoiceDrafts[commission.id] || {};
+    await submitCommissionInvoice(commission.id, draft);
+    setInvoiceDrafts((current) => ({ ...current, [commission.id]: {} }));
+  }
+
+  async function reviewInvoice(commission, invoiceStatus) {
+    const draft = reviewDrafts[commission.id] || {};
+    await reviewCommissionInvoice(commission.id, { ...draft, invoice_status: invoiceStatus });
+    setReviewDrafts((current) => ({ ...current, [commission.id]: {} }));
+  }
 
   return (
     <div className="page-grid">
@@ -252,13 +284,13 @@ export function Commissions() {
       </Modal>
 
       <div className="stats-grid two">
-        {currentUser.role === 'admin' ? (
+        {financeOwner ? (
           <section className="finance-card">
             <span>Active partners</span>
             <strong>{partnerSummaries.length}</strong>
           </section>
         ) : null}
-        {currentUser.role === 'admin' ? (
+        {financeOwner ? (
           <section className="finance-card">
             <span>Submitted applications</span>
             <strong>{visibleApplications.length}</strong>
@@ -275,10 +307,10 @@ export function Commissions() {
       </div>
 
       <div className="segmented-tabs">
-        {currentUser.role === 'admin' ? (
+        {financeOwner ? (
           <button className={activeView === 'partners' ? 'active' : ''} type="button" onClick={() => setView('partners')}>Partner Tracker</button>
         ) : null}
-        {currentUser.role === 'manager' ? (
+        {managerUser ? (
           <button className={activeView === 'profile' ? 'active' : ''} type="button" onClick={() => setView('profile')}>Account Details</button>
         ) : null}
         <button className={activeView === 'structure' ? 'active' : ''} type="button" onClick={() => setView('structure')}>Partner Eligibility</button>
@@ -286,7 +318,7 @@ export function Commissions() {
         <button className={activeView === 'payments' ? 'active' : ''} type="button" onClick={() => setView('payments')}>Commission Payments</button>
       </div>
 
-      {activeView === 'partners' && currentUser.role === 'admin' ? (
+      {activeView === 'partners' && financeOwner ? (
         <>
           <Panel title="Partner Application Tracker" description="Admin view of every partner, submitted application count, current stage mix, counselor seat usage, and finance verification.">
             <div className="partner-tracker-grid">
@@ -359,7 +391,7 @@ export function Commissions() {
         </>
       ) : null}
 
-      {activeView === 'profile' && currentUser.role === 'manager' ? (
+      {activeView === 'profile' && managerUser ? (
         <ManagerFinanceProfile
           key={`${currentUser.id}-${currentFinanceProfile?.id || 'new'}`}
           currentFinanceProfile={currentFinanceProfile}
@@ -504,7 +536,8 @@ export function Commissions() {
                       <th>Amount</th>
                       <th>Status</th>
                       <th>Next step</th>
-                      {currentUser.role === 'admin' ? <th>Admin</th> : null}
+                      {financeOwner ? <th>Super admin review</th> : null}
+                      {managerUser ? <th>Partner invoice</th> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -515,19 +548,75 @@ export function Commissions() {
                           <td>{student?.first_name} {student?.last_name}<small>{student?.email}</small></td>
                           <td>{commission.university}</td>
                           <td>{commission.course}</td>
-                          <td><strong>{money(commission.expected_amount, commission.currency)}</strong></td>
-                          <td><StatusBadge value={commission.status} /></td>
-                          <td>{commission.status === 'ready_to_invoice' ? 'Raise invoice' : labelFor(commission.status)}</td>
-                          {currentUser.role === 'admin' ? (
+                          <td>
+                            <strong>{money(commission.approved_amount || commission.invoice_amount || commission.expected_amount, commission.currency)}</strong>
+                            <small>Invoice: {labelFor(commission.invoice_status || 'not_submitted')}</small>
+                          </td>
+                          <td><StatusBadge value={commission.payout_status || commission.status} /></td>
+                          <td>{commission.invoice_reason || (commission.status === 'ready_to_invoice' ? 'Raise invoice' : labelFor(commission.status))}</td>
+                          {financeOwner ? (
                             <td>
-                              <button
-                                className="row-icon-button"
-                                type="button"
-                                onClick={() => updateCommission(commission.id, { status: commission.status === 'paid' ? 'projected' : 'paid' }).catch(() => {})}
-                              >
-                                <Pencil size={15} />
-                                Toggle paid
-                              </button>
+                              <div className="row-actions finance-review-actions">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  placeholder="Approved amount"
+                                  value={reviewDrafts[commission.id]?.approved_amount ?? commission.approved_amount ?? ''}
+                                  onChange={(event) => updateReviewDraft(commission.id, 'approved_amount', event.target.value)}
+                                />
+                                <select
+                                  value={reviewDrafts[commission.id]?.currency || commission.currency || 'INR'}
+                                  onChange={(event) => updateReviewDraft(commission.id, 'currency', event.target.value)}
+                                >
+                                  {['INR', 'GBP', 'USD', 'EUR', 'AUD', 'CAD'].map((currency) => <option key={currency}>{currency}</option>)}
+                                </select>
+                                <select
+                                  value={reviewDrafts[commission.id]?.payout_status || commission.payout_status || 'pending'}
+                                  onChange={(event) => updateReviewDraft(commission.id, 'payout_status', event.target.value)}
+                                >
+                                  <option value="pending">Payout pending</option>
+                                  <option value="approved">Payout approved</option>
+                                  <option value="paid">Paid</option>
+                                  <option value="held">Held</option>
+                                  <option value="rejected">Rejected</option>
+                                </select>
+                                <input
+                                  placeholder="Reason / finance note"
+                                  value={reviewDrafts[commission.id]?.invoice_reason ?? ''}
+                                  onChange={(event) => updateReviewDraft(commission.id, 'invoice_reason', event.target.value)}
+                                />
+                                <button type="button" onClick={() => reviewInvoice(commission, 'accepted').catch(() => {})}>
+                                  <Pencil size={15} />
+                                  Accept invoice
+                                </button>
+                                <button type="button" onClick={() => reviewInvoice(commission, 'rejected').catch(() => {})}>Reject</button>
+                              </div>
+                            </td>
+                          ) : null}
+                          {managerUser ? (
+                            <td>
+                              <div className="row-actions finance-review-actions">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  placeholder="Invoice amount"
+                                  value={invoiceDrafts[commission.id]?.invoice_amount ?? commission.invoice_amount ?? ''}
+                                  onChange={(event) => updateInvoiceDraft(commission.id, 'invoice_amount', event.target.value)}
+                                />
+                                <input
+                                  placeholder="Invoice number"
+                                  value={invoiceDrafts[commission.id]?.invoice_number ?? commission.invoice_number ?? ''}
+                                  onChange={(event) => updateInvoiceDraft(commission.id, 'invoice_number', event.target.value)}
+                                />
+                                <input
+                                  placeholder="Invoice reason"
+                                  value={invoiceDrafts[commission.id]?.invoice_reason ?? commission.invoice_reason ?? ''}
+                                  onChange={(event) => updateInvoiceDraft(commission.id, 'invoice_reason', event.target.value)}
+                                />
+                                <button type="button" disabled={['accepted', 'paid'].includes(commission.invoice_status)} onClick={() => submitInvoice(commission).catch(() => {})}>
+                                  Submit invoice
+                                </button>
+                              </div>
                             </td>
                           ) : null}
                         </tr>

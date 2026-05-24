@@ -18,17 +18,18 @@ import { useState } from 'react';
 import { roles } from '../data/seed';
 import { labelFor } from '../lib/status';
 import { useAppState } from '../lib/appState';
+import { canManageFinance, canManagePartners, isAdminRole } from '../lib/roles';
 
 const nav = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'manager', 'counselor'] },
-  { id: 'students', label: 'Students', icon: Users, roles: ['admin', 'manager', 'counselor'] },
-  { id: 'applications', label: 'Applications', icon: FileText, roles: ['admin', 'manager', 'counselor'] },
-  { id: 'documents', label: 'Documents', icon: UploadCloud, roles: ['admin', 'manager', 'counselor'] },
-  { id: 'courses', label: 'Program Search', icon: Search, roles: ['admin', 'manager', 'counselor'] },
-  { id: 'team', label: 'Team & Partners', icon: UsersRound, roles: ['admin', 'manager'] },
-  { id: 'commissions', label: 'Finance', icon: Landmark, roles: ['admin', 'manager'] },
-  { id: 'support', label: 'Support', icon: LifeBuoy, roles: ['admin', 'manager', 'counselor'] },
-  { id: 'audit', label: 'Audit', icon: ShieldCheck, roles: ['admin'] },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['super_admin', 'admin', 'manager', 'counselor'] },
+  { id: 'students', label: 'Students', icon: Users, roles: ['super_admin', 'admin', 'manager', 'counselor'] },
+  { id: 'applications', label: 'Applications', icon: FileText, roles: ['super_admin', 'admin', 'manager', 'counselor'] },
+  { id: 'documents', label: 'Documents', icon: UploadCloud, roles: ['super_admin', 'admin', 'manager', 'counselor'] },
+  { id: 'courses', label: 'Program Search', icon: Search, roles: ['super_admin', 'admin', 'manager', 'counselor'] },
+  { id: 'team', label: 'Team & Partners', icon: UsersRound, roles: ['super_admin', 'admin', 'manager'] },
+  { id: 'commissions', label: 'Finance', icon: Landmark, roles: ['super_admin', 'admin', 'manager'] },
+  { id: 'support', label: 'Support', icon: LifeBuoy, roles: ['super_admin', 'admin', 'manager', 'counselor'] },
+  { id: 'audit', label: 'Audit', icon: ShieldCheck, roles: ['super_admin', 'admin'] },
 ];
 
 const adminDecisionStatuses = new Set([
@@ -64,14 +65,20 @@ export function Shell({ activePage, onNavigate, children }) {
     visibleStudents,
   } = useAppState();
   const [alertsOpen, setAlertsOpen] = useState(false);
-  const items = nav.filter((item) => item.roles.includes(currentUser.role));
+  const items = nav.filter((item) => {
+    if (!item.roles.includes(currentUser.role)) return false;
+    if (item.id === 'team') return currentUser.role === 'manager' || canManagePartners(currentUser, users);
+    if (item.id === 'commissions') return currentUser.role === 'manager' || canManageFinance(currentUser, users);
+    if (item.id === 'audit') return isAdminRole(currentUser.role);
+    return true;
+  });
   const studentName = (studentId) => {
     const student = visibleStudents.find((item) => item.id === studentId);
     return student ? `${student.first_name} ${student.last_name}` : 'Student file';
   };
   const applicationName = (application) => `${studentName(application.student_id)} · ${application.university || 'Application'}`;
   const practicalAlerts = [
-    ...(currentUser.role === 'admin'
+    ...(isAdminRole(currentUser.role)
       ? visibleApplications
         .filter((application) => ['ready_for_admin_review', 'pending_admin_review'].includes(application.status))
         .map((application) => ({
@@ -90,7 +97,7 @@ export function Shell({ activePage, onNavigate, children }) {
           title: applicationName(application),
           detail: application.status === 'admin_changes_requested' ? 'Admin requested changes' : `Admin update: ${labelFor(application.status)}`,
         }))),
-    ...(currentUser.role === 'admin'
+    ...(isAdminRole(currentUser.role)
       ? visibleDocuments
         .filter((document) => document.status === 'uploaded')
         .map((document) => ({
@@ -109,12 +116,12 @@ export function Shell({ activePage, onNavigate, children }) {
           title: `${studentName(document.student_id)} · ${document.type}`,
           detail: document.note || 'Admin rejected this document. Re-upload needed.',
         }))),
-    ...(currentUser.role === 'admin'
+    ...(isAdminRole(currentUser.role)
       ? []
       : visibleApplicationNotes
         .filter((note) => {
           const actor = users.find((user) => user.id === note.author_id);
-          return actor?.role === 'admin' || /admin|videshway/i.test(note.author_name || '');
+          return isAdminRole(actor?.role) || /admin|videshway/i.test(note.author_name || '');
         })
         .slice(0, 6)
         .map((note) => {
@@ -172,8 +179,8 @@ export function Shell({ activePage, onNavigate, children }) {
       <main className="workspace">
         <header className="topbar">
           <div>
-            <p>{roles[currentUser.role].label}</p>
-            <h1>{roles[currentUser.role].home}</h1>
+            <p>{roles[currentUser.role]?.label || 'Bizzlo user'}</p>
+            <h1>{roles[currentUser.role]?.home || 'Bizzlo admissions workspace.'}</h1>
           </div>
           <div className="topbar-actions">
             <button className="ghost-button" type="button" onClick={() => setAlertsOpen((open) => !open)}>
@@ -219,7 +226,7 @@ export function Shell({ activePage, onNavigate, children }) {
                 >
                   {users.map((user) => (
                     <option key={user.id} value={user.id}>
-                      {user.name} ({roles[user.role].label})
+                      {user.name} ({roles[user.role]?.label || user.role})
                     </option>
                   ))}
                 </select>

@@ -10,6 +10,7 @@ import {
   validatePhone,
 } from '../data/formOptions';
 import { useAppState } from '../lib/appState';
+import { isAdminRole } from '../lib/roles';
 import { Panel, StatusBadge, Modal, TextInput, SelectInput } from '../components/ui';
 
 const emptyForm = {
@@ -33,7 +34,7 @@ export function Students({ onNavigate }) {
   const [invite, setInvite] = useState(null);
   const [formError, setFormError] = useState('');
   const [form, setForm] = useState(emptyForm);
-  const availableCounselors = currentUser.role === 'admin'
+  const availableCounselors = isAdminRole(currentUser.role)
     ? counselors
     : counselors.filter((user) => (
       user.organization_id === currentUser.organization_id || user.manager_id === currentUser.id

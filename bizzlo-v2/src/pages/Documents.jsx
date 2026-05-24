@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Download, FileCheck2, FileDown, ShieldCheck, UploadCloud } from 'lucide-react';
 import { useAppState } from '../lib/appState';
+import { isAdminRole } from '../lib/roles';
 import { Badge, Panel, SelectInput, StatusBadge, TextInput } from '../components/ui';
 
 const documentTypes = ['Passport', 'Academic Transcript', 'Degree Certificate', 'IELTS', 'SOP', 'LOR', 'CV', 'Bank Statement', 'Visa Document'];
@@ -60,6 +61,7 @@ export function Documents() {
   }), [filter, visibleDocuments]);
   const pendingReview = visibleDocuments.filter((documentRow) => ['uploaded', 'documents_pending'].includes(documentRow.status)).length;
   const approvedCount = visibleDocuments.filter((documentRow) => documentRow.status === 'approved').length;
+  const adminUser = isAdminRole(currentUser.role);
 
   useEffect(() => {
     refreshDocuments?.().catch(() => {});
@@ -192,7 +194,7 @@ export function Documents() {
                 <th>Status</th>
                 <th>Notes</th>
                 <th>File</th>
-                {currentUser.role === 'admin' ? <th>Admin review</th> : null}
+                {adminUser ? <th>Admin review</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -220,7 +222,7 @@ export function Documents() {
                         {downloadId === documentRow.id ? 'Preparing' : 'Download'}
                       </button>
                     </td>
-                    {currentUser.role === 'admin' ? (
+                    {adminUser ? (
                       <td>
                         {documentRow.status === 'approved' ? (
                           <Badge tone="success">Approved</Badge>

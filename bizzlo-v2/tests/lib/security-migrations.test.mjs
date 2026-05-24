@@ -63,6 +63,7 @@ test('010 creates erasure event tracking', async () => {
 test('011 stores partner portal usernames on requests and profiles', async () => {
   const source = await readFile(migration11, 'utf8');
   assert.match(source, /portal_username/);
+  assert.match(source, /auth_login_email/);
   assert.match(source, /idx_profiles_portal_username_unique/);
   assert.match(source, /account_requests_portal_username_format/);
 });

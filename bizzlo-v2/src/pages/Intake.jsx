@@ -10,6 +10,7 @@ import {
   validatePhone,
 } from '../data/formOptions';
 import { useAppState } from '../lib/appState';
+import { isAdminRole } from '../lib/roles';
 import { Panel, SelectInput, StatusBadge, TextInput } from '../components/ui';
 
 const requiredDocs = ['Passport', 'Academic Transcript', 'Degree Certificate', 'IELTS', 'SOP', 'LOR', 'CV'];
@@ -92,7 +93,7 @@ export function Intake({ onNavigate }) {
     });
   }
 
-  if (currentUser.role === 'admin') {
+  if (isAdminRole(currentUser.role)) {
     return (
       <div className="page-grid">
         <div className="page-heading">

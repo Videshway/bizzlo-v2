@@ -7,7 +7,8 @@ const sourcePath = new URL('../../supabase/functions/invite-user/index.ts', impo
 test('invite-user authorizes admin or owning manager only', async () => {
   const source = await readFile(sourcePath, 'utf8');
 
-  assert.match(source, /const isAdmin = adminProfile\.role === "admin"/);
+  assert.match(source, /adminProfile\.role === "super_admin"/);
+  assert.match(source, /superAdminCount/);
   assert.match(source, /isManagerCreatingOwnCounselor/);
   assert.match(source, /You cannot create this account login\./);
 });

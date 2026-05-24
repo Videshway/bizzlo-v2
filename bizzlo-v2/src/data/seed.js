@@ -1,7 +1,11 @@
 export const roles = {
+  super_admin: {
+    label: 'Super Admin',
+    home: 'Owner workspace for partners, finance, payouts, and final controls.',
+  },
   admin: {
-    label: 'Videshway Admin',
-    home: 'Command center for all partners, applications, documents, and commissions.',
+    label: 'Admissions Admin',
+    home: 'Application and document processing workspace for all partner cases.',
   },
   manager: {
     label: 'Manager',
@@ -14,7 +18,8 @@ export const roles = {
 };
 
 export const seedUsers = [
-  { id: 'u-admin', name: 'Videshway Admin', email: 'admin@videshway.com', role: 'admin', organization_id: 'org-videshway' },
+  { id: 'u-super-admin', name: 'Videshway Super Admin', email: 'owner@videshway.com', role: 'super_admin', organization_id: 'org-videshway' },
+  { id: 'u-admin', name: 'Videshway Admissions Admin', email: 'admin@videshway.com', role: 'admin', organization_id: 'org-videshway' },
   { id: 'u-manager', name: 'Prashant Manager', email: 'manager@partner.com', role: 'manager', organization_id: 'org-delhi-partner' },
   { id: 'u-counselor', name: 'Aditi Counselor', email: 'counselor@partner.com', role: 'counselor', manager_id: 'u-manager', organization_id: 'org-delhi-partner' },
   { id: 'u-manager-mumbai', name: 'Neha Manager', email: 'mumbai.partner@example.com', role: 'manager', organization_id: 'org-study-mumbai' },
@@ -22,7 +27,7 @@ export const seedUsers = [
 ];
 
 export const seedOrganizations = [
-  { id: 'org-videshway', name: 'Videshway', kind: 'admin', primary_manager_id: 'u-admin', counselor_limit: 99, status: 'active' },
+  { id: 'org-videshway', name: 'Videshway', kind: 'admin', primary_manager_id: 'u-super-admin', counselor_limit: 99, status: 'active' },
   { id: 'org-delhi-partner', name: 'Videshway Delhi Partner', kind: 'partner', primary_manager_id: 'u-manager', counselor_limit: 1, status: 'active' },
   { id: 'org-study-mumbai', name: 'Study Circle Mumbai', kind: 'partner', primary_manager_id: 'u-manager-mumbai', counselor_limit: 1, status: 'active' },
 ];

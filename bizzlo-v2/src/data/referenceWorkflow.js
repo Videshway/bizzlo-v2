@@ -17,7 +17,9 @@ import {
 } from 'lucide-react';
 
 export const applicationStages = [
+  'profile_incomplete',
   'documents_pending',
+  'ready_for_admin_review',
   'pending_admin_review',
   'submitted_to_university',
   'offer_received',
@@ -29,7 +31,6 @@ export const applicationStages = [
 ];
 
 export const applicationStageAliases = {
-  ready_for_admin_review: 'pending_admin_review',
   awaiting_decision: 'submitted_to_university',
   conditional_offer: 'offer_received',
   unconditional_offer: 'offer_received',

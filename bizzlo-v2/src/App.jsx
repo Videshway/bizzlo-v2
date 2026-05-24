@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useState } from 'react';
 import { AuthScreen } from './components/AuthScreen';
 import { CookieConsent } from './components/CookieConsent';

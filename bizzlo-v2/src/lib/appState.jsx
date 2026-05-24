@@ -15,6 +15,7 @@ import {
 import { isSupabaseConfigured, supabase } from './supabase';
 import { loadCountryCourseCatalog, loadOfficialCourseCatalog } from './courseLoader';
 import { captureEvent } from './telemetry';
+import { canManageFinance, canManagePartners, isAdminRole } from './roles';
 
 const AppStateContext = createContext(null);
 const documentBucket = 'student-documents';
@@ -24,9 +25,9 @@ const courseCatalogMaxRows = 75000;
 const partnerEditableStatuses = new Set([
   'profile_incomplete',
   'documents_pending',
-  'ready_for_admin_review',
   'admin_changes_requested',
 ]);
+const partnerSubmissionStatuses = new Set([...partnerEditableStatuses, 'ready_for_admin_review']);
 const submittedDocumentStatuses = new Set(['uploaded', 'approved']);
 
 function mapProfile(profile) {
@@ -290,6 +291,11 @@ function mapCommission(commission) {
     student_id: commission.application?.student_id || commission.student_id,
     university: commission.application?.university || commission.university,
     course: commission.application?.course || commission.course,
+    invoice_status: commission.invoice_status || (commission.status === 'invoiced' ? 'submitted' : 'not_submitted'),
+    payout_status: commission.payout_status || (commission.status === 'paid' ? 'paid' : 'not_due'),
+    invoice_amount: commission.invoice_amount ?? '',
+    approved_amount: commission.approved_amount ?? '',
+    invoice_reason: commission.invoice_reason || '',
   };
 }
 
@@ -359,8 +365,10 @@ function studentInviteUrl(student, token) {
 
 function scopedByRole(items, user) {
   if (!user) return [];
-  if (user.role === 'admin') return items;
-  if (user.role === 'manager') return items.filter((item) => item.manager_id === user.id);
+  if (isAdminRole(user.role)) return items;
+  if (user.role === 'manager') {
+    return items.filter((item) => item.organization_id === user.organization_id || item.manager_id === user.id);
+  }
   if (user.role === 'counselor') return items.filter((item) => item.counselor_id === user.id || item.uploaded_by === user.id);
   return [];
 }
@@ -393,7 +401,7 @@ export function AppStateProvider({ children }) {
   const [organizations, setOrganizations] = useState(isDemoMode ? seedOrganizations : []);
   const [accountRequests, setAccountRequests] = useState(isDemoMode ? seedAccountRequests : []);
   const [users, setUsers] = useState(isDemoMode ? seedUsers : []);
-  const [currentUser, setCurrentUser] = useState(isDemoMode ? seedUsers[1] : null);
+  const [currentUser, setCurrentUser] = useState(isDemoMode ? seedUsers[0] : null);
   const [students, setStudents] = useState(isDemoMode ? seedStudents : []);
   const [applications, setApplications] = useState(isDemoMode ? seedApplications : []);
   const [applicationNotes, setApplicationNotes] = useState(isDemoMode ? seedApplicationNotes : []);
@@ -616,7 +624,7 @@ export function AppStateProvider({ children }) {
     setDataLoading(true);
     setAppError('');
     try {
-      const isAdminProfile = profile.role === 'admin';
+      const isAdminProfile = isAdminRole(profile.role);
       const isCounselorProfile = profile.role === 'counselor';
       const [
         profilesResult,
@@ -706,7 +714,6 @@ export function AppStateProvider({ children }) {
         applicationsResult,
         applicationEventsResult,
         documentsResult,
-        coursesResult,
         tasksResult,
         commissionsResult,
         financeProfilesResult,
@@ -727,9 +734,9 @@ export function AppStateProvider({ children }) {
       setApplications(applicationsResult.data || []);
       setApplicationNotes((applicationEventsResult.data || []).map(mapApplicationNote));
       setDocuments((documentsResult.data || []).map(mapDocument));
-      const databaseCourses = (coursesResult.data || []).map(mapCourse);
+      const databaseCourses = coursesResult.error ? [] : (coursesResult.data || []).map(mapCourse);
       setCourses((current) => {
-        if (!databaseCourses.length) return [];
+        if (!databaseCourses.length) return current;
         return current.length > databaseCourses.length
           ? mergeCourseRows(current, databaseCourses)
           : databaseCourses;
@@ -738,6 +745,7 @@ export function AppStateProvider({ children }) {
         ...current,
         totalLoaded: Math.max(current.totalLoaded, databaseCourses.length),
         totalAvailable: Math.max(current.totalAvailable, databaseCourses.length),
+        lastError: coursesResult.error ? errorMessage(coursesResult.error) : current.lastError,
       }));
       setTasks((tasksResult.data || []).map((task) => mapTask(task, mappedUsers)));
       setCommissions((commissionsResult.data || []).map(mapCommission));
@@ -883,7 +891,7 @@ export function AppStateProvider({ children }) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'commissions' }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'student_invites' }, scheduleRefresh);
 
-    if (currentUser?.role === 'admin') {
+    if (isAdminRole(currentUser?.role)) {
       channel.on('postgres_changes', { event: '*', schema: 'public', table: 'audit_events' }, scheduleRefresh);
     }
 
@@ -956,12 +964,12 @@ export function AppStateProvider({ children }) {
   const managers = useMemo(() => users.filter((user) => user.role === 'manager'), [users]);
   const visibleOrganizations = useMemo(() => {
     if (!currentUser) return [];
-    if (currentUser.role === 'admin') return organizations;
+    if (isAdminRole(currentUser.role)) return organizations;
     return organizations.filter((organization) => organization.id === currentUser.organization_id);
   }, [currentUser, organizations]);
   const visibleAccountRequests = useMemo(() => {
     if (!currentUser) return [];
-    if (currentUser.role === 'admin') return accountRequests;
+    if (isAdminRole(currentUser.role)) return accountRequests;
     return accountRequests.filter((request) => request.organization_id === currentUser.organization_id || request.requested_by === currentUser.id);
   }, [accountRequests, currentUser]);
   const managerCounselors = useMemo(() => {
@@ -972,8 +980,10 @@ export function AppStateProvider({ children }) {
   const visibleStudents = useMemo(() => {
     if (!currentUser) return [];
     if (isSupabaseConfigured) return students;
-    if (currentUser.role === 'admin') return students;
-    if (currentUser.role === 'manager') return students.filter((student) => student.manager_id === currentUser.id);
+    if (isAdminRole(currentUser.role)) return students;
+    if (currentUser.role === 'manager') {
+      return students.filter((student) => student.organization_id === currentUser.organization_id || student.manager_id === currentUser.id);
+    }
     return students.filter((student) => student.counselor_id === currentUser.id);
   }, [currentUser, students]);
 
@@ -1003,22 +1013,27 @@ export function AppStateProvider({ children }) {
     if (!currentUser) return [];
     if (isSupabaseConfigured) return tasks;
     const visibleStudentIds = new Set(visibleStudents.map((student) => student.id));
-    return tasks.filter((task) => visibleStudentIds.has(task.student_id) || currentUser.role === 'admin');
+    return tasks.filter((task) => visibleStudentIds.has(task.student_id) || isAdminRole(currentUser.role));
   }, [currentUser, tasks, visibleStudents]);
 
   const visibleCommissions = useMemo(() => {
     if (!currentUser || currentUser.role === 'counselor') return [];
-    if (isSupabaseConfigured) return commissions;
+    if (canManageFinance(currentUser, users)) return commissions;
+    if (currentUser.role === 'manager') {
+      return commissions.filter((commission) => (
+        commission.organization_id === currentUser.organization_id || commission.manager_id === currentUser.id
+      ));
+    }
     return scopedByRole(commissions, currentUser);
-  }, [commissions, currentUser]);
+  }, [commissions, currentUser, users]);
 
   const visiblePartnerFinanceProfiles = useMemo(() => {
     if (!currentUser || currentUser.role === 'counselor') return [];
-    if (currentUser.role === 'admin') return partnerFinanceProfiles;
+    if (canManageFinance(currentUser, users)) return partnerFinanceProfiles;
     return partnerFinanceProfiles.filter((profile) => (
       profile.organization_id === currentUser.organization_id || profile.manager_id === currentUser.id
     ));
-  }, [currentUser, partnerFinanceProfiles]);
+  }, [currentUser, partnerFinanceProfiles, users]);
 
   async function addStudent(student) {
     requireUser(currentUser);
@@ -1026,13 +1041,26 @@ export function AppStateProvider({ children }) {
 
     const selectedCounselor = users.find((user) => user.id === student.counselor_id);
     const desiredCountries = splitCountries(student.desired_countries);
+    const organizationId = selectedCounselor?.organization_id || currentUser.organization_id;
+    const organization = organizations.find((item) => item.id === organizationId);
+    const organizationManager = users.find((user) => (
+      user.role === 'manager'
+      && (user.organization_id === organizationId || user.id === organization?.primary_manager_id)
+    ));
     const managerId = currentUser.role === 'manager'
       ? currentUser.id
-      : selectedCounselor?.manager_id || currentUser.manager_id || null;
+      : currentUser.role === 'counselor'
+        ? currentUser.manager_id || organizationManager?.id || null
+        : selectedCounselor?.manager_id || organizationManager?.id || currentUser.manager_id || null;
     const counselorId = currentUser.role === 'counselor'
       ? currentUser.id
       : student.counselor_id || selectedCounselor?.id || null;
-    const organizationId = currentUser.organization_id || selectedCounselor?.organization_id;
+
+    if (isSupabaseConfigured && !organizationId) {
+      const error = new Error('Choose a partner organization or counselor before creating the student.');
+      setAppError(error.message);
+      throw error;
+    }
 
     if (!isSupabaseConfigured) {
       const nextStudent = {
@@ -1040,6 +1068,7 @@ export function AppStateProvider({ children }) {
         student_code: makeStudentCode(students),
         profile_score: 38,
         status: 'profile_incomplete',
+        organization_id: organizationId || currentUser.organization_id,
         manager_id: managerId || 'u-manager',
         counselor_id: counselorId || 'u-counselor',
         ...student,
@@ -1094,8 +1123,8 @@ export function AppStateProvider({ children }) {
     requireUser(currentUser);
     setAppError('');
 
-    if (currentUser.role !== 'admin') {
-      const error = new Error('Only Videshway admin can create partner manager accounts.');
+    if (!canManagePartners(currentUser, users)) {
+      const error = new Error('Only the Bizzlo super admin can create partner manager accounts.');
       setAppError(error.message);
       throw error;
     }
@@ -1290,8 +1319,8 @@ export function AppStateProvider({ children }) {
 
     const request = accountRequests.find((item) => item.id === requestId);
     const canRequesterCancel = status === 'cancelled' && request?.requested_by === currentUser.id;
-    if (currentUser.role !== 'admin' && !canRequesterCancel) {
-      const error = new Error('Only Videshway admin can update account requests. Requesters can only cancel their own pending invite.');
+    if (!canManagePartners(currentUser, users) && !canRequesterCancel) {
+      const error = new Error('Only the Bizzlo super admin can update partner account requests. Requesters can only cancel their own pending invite.');
       setAppError(error.message);
       throw error;
     }
@@ -1320,8 +1349,8 @@ export function AppStateProvider({ children }) {
     requireUser(currentUser);
     setAppError('');
 
-    if (currentUser.role !== 'admin') {
-      const error = new Error('Only Videshway admin can change counselor seat limits.');
+    if (!canManagePartners(currentUser, users)) {
+      const error = new Error('Only the Bizzlo super admin can change counselor seat limits.');
       setAppError(error.message);
       throw error;
     }
@@ -1367,8 +1396,8 @@ export function AppStateProvider({ children }) {
     const canManagerCreateCounselor = currentUser.role === 'manager'
       && request?.role === 'counselor'
       && request?.requested_by === currentUser.id;
-    if (currentUser.role !== 'admin' && !canManagerCreateCounselor) {
-      const error = new Error('Only Videshway admin can create manager logins. Partner managers can create their own counselor login.');
+    if (!canManagePartners(currentUser, users) && !canManagerCreateCounselor) {
+      const error = new Error('Only the Bizzlo super admin can create manager logins. Partner managers can create their own counselor login.');
       setAppError(error.message);
       throw error;
     }
@@ -1523,7 +1552,7 @@ export function AppStateProvider({ children }) {
     requireUser(currentUser);
     setAppError('');
 
-    if (currentUser.role !== 'admin') {
+    if (!isAdminRole(currentUser.role)) {
       const error = new Error('Only Videshway admin can add or update the course list.');
       setAppError(error.message);
       throw error;
@@ -1576,7 +1605,7 @@ export function AppStateProvider({ children }) {
     setCourses((current) => mergeCourseRows(current, mapped));
     setCourseCatalogStatus((current) => ({
       ...current,
-      totalLoaded: Math.max(current.totalLoaded || 0, current.length, (filters.offset || 0) + mapped.length, mapped.length),
+      totalLoaded: Math.max(current.totalLoaded || 0, (filters.offset || 0) + mapped.length, mapped.length),
       totalAvailable: Math.max(current.totalAvailable || 0, mapped.length),
       lastError: '',
     }));
@@ -1587,7 +1616,7 @@ export function AppStateProvider({ children }) {
     requireUser(currentUser);
     setAppError('');
 
-    if (currentUser.role !== 'admin') {
+    if (!isAdminRole(currentUser.role)) {
       const error = new Error('Only Videshway admin can import the course catalog.');
       setAppError(error.message);
       throw error;
@@ -1724,19 +1753,19 @@ export function AppStateProvider({ children }) {
     setAppError('');
     const currentApplication = applications.find((item) => item.id === applicationId);
 
-    if (currentUser.role !== 'admin' && !partnerEditableStatuses.has(status)) {
+    if (!isAdminRole(currentUser.role) && !partnerSubmissionStatuses.has(status)) {
       const error = new Error('Only Videshway admin can move an application into university, offer, visa, or enrollment stages.');
       setAppError(error.message);
       throw error;
     }
 
-    if (currentUser.role !== 'admin' && currentApplication && !partnerEditableStatuses.has(currentApplication.status)) {
+    if (!isAdminRole(currentUser.role) && currentApplication && !partnerEditableStatuses.has(currentApplication.status)) {
       const error = new Error('This file is already with Videshway admin. Wait for the admin update or request changes.');
       setAppError(error.message);
       throw error;
     }
 
-    if (currentUser.role !== 'admin' && status === 'ready_for_admin_review') {
+    if (!isAdminRole(currentUser.role) && status === 'ready_for_admin_review') {
       const submittedDocuments = documents.filter((document) => (
         (
           document.application_id === applicationId
@@ -1752,7 +1781,7 @@ export function AppStateProvider({ children }) {
     }
 
     const patch = applicationWorkflowPatch(status);
-    const statusNote = currentUser.role === 'admin'
+    const statusNote = isAdminRole(currentUser.role)
       ? `Videshway admin updated this application to ${statusCopy(status)}.`
       : status === 'ready_for_admin_review'
         ? 'Partner submitted uploaded documents for Videshway admin review.'
@@ -1997,7 +2026,7 @@ export function AppStateProvider({ children }) {
     requireUser(currentUser);
     setAppError('');
 
-    if (currentUser.role !== 'admin') {
+    if (!isAdminRole(currentUser.role)) {
       const error = new Error('Only Videshway admin can approve or reject uploaded documents.');
       setAppError(error.message);
       throw error;
@@ -2107,6 +2136,17 @@ export function AppStateProvider({ children }) {
     requireUser(currentUser);
     setAppError('');
 
+    const currentCommission = commissions.find((commission) => commission.id === commissionId);
+    const managerOwnsCommission = currentUser.role === 'manager'
+      && currentCommission
+      && currentCommission.organization_id === currentUser.organization_id
+      && (!currentCommission.manager_id || currentCommission.manager_id === currentUser.id);
+    if (!canManageFinance(currentUser, users) && !managerOwnsCommission) {
+      const error = new Error('Only partner managers or Bizzlo super admin can update commission records.');
+      setAppError(error.message);
+      throw error;
+    }
+
     if (!isSupabaseConfigured) {
       setCommissions((prev) => prev.map((commission) => (
         commission.id === commissionId ? { ...commission, ...patch } : commission
@@ -2130,12 +2170,57 @@ export function AppStateProvider({ children }) {
     captureEvent('commission_status_changed', { commission_id: commissionId, status: patch.status }, currentUser);
   }
 
+  async function submitCommissionInvoice(commissionId, invoice = {}) {
+    const amount = Number(invoice.invoice_amount || invoice.amount || 0);
+    if (!amount || amount < 0) {
+      const error = new Error('Add the invoice amount before submitting it to finance.');
+      setAppError(error.message);
+      throw error;
+    }
+    const patch = {
+      invoice_amount: amount,
+      invoice_number: invoice.invoice_number || '',
+      invoice_reason: invoice.invoice_reason || invoice.reason || 'Partner invoice submitted for review.',
+      invoice_status: 'submitted',
+      invoice_submitted_by: currentUser.id,
+      invoice_submitted_at: new Date().toISOString(),
+      payout_status: 'pending',
+      status: 'invoiced',
+    };
+    await updateCommission(commissionId, patch);
+  }
+
+  async function reviewCommissionInvoice(commissionId, review = {}) {
+    if (!canManageFinance(currentUser, users)) {
+      const error = new Error('Only the Bizzlo super admin can accept or reject partner invoices.');
+      setAppError(error.message);
+      throw error;
+    }
+    const decision = review.invoice_status === 'rejected' ? 'rejected' : 'accepted';
+    const payoutStatus = decision === 'rejected' ? 'rejected' : (review.payout_status || 'approved');
+    const patch = {
+      approved_amount: Number(review.approved_amount || review.amount || 0),
+      currency: review.currency || 'INR',
+      invoice_reason: review.invoice_reason || review.reason || (decision === 'accepted' ? 'Invoice accepted by finance.' : 'Invoice rejected by finance.'),
+      invoice_status: decision,
+      invoice_reviewed_by: currentUser.id,
+      invoice_reviewed_at: new Date().toISOString(),
+      payout_status: payoutStatus,
+      status: decision === 'rejected'
+        ? 'disputed'
+        : payoutStatus === 'paid'
+          ? 'paid'
+          : 'invoiced',
+    };
+    await updateCommission(commissionId, patch);
+  }
+
   async function updatePartnerFinanceProfile(profile) {
     requireUser(currentUser);
     setAppError('');
 
-    if (!['admin', 'manager'].includes(currentUser.role)) {
-      const error = new Error('Only partner managers and Videshway admin can update finance details.');
+    if (currentUser.role !== 'manager' && !canManageFinance(currentUser, users)) {
+      const error = new Error('Only partner managers and Bizzlo super admin can update finance details.');
       setAppError(error.message);
       throw error;
     }
@@ -2146,7 +2231,7 @@ export function AppStateProvider({ children }) {
       user.role === 'manager'
       && (user.organization_id === organizationId || user.id === organization?.primary_manager_id)
     ));
-    const status = currentUser.role === 'admin' && profile.status
+    const status = canManageFinance(currentUser, users) && profile.status
       ? profile.status
       : 'pending_admin_review';
     const payload = {
@@ -2439,6 +2524,8 @@ export function AppStateProvider({ children }) {
     updateDocumentStatus,
     getDocumentDownloadUrl,
     updateCommission,
+    submitCommissionInvoice,
+    reviewCommissionInvoice,
     updatePartnerFinanceProfile,
     closeTask,
     addServiceRequest,

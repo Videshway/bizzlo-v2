@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ShieldCheck } from 'lucide-react';
 import { useAppState } from '../lib/appState';
+import { isAdminRole } from '../lib/roles';
 import { EmptyState, Panel, SelectInput, TextInput } from '../components/ui';
 
 function formatDate(value) {
@@ -23,7 +24,7 @@ export function Audit() {
     return haystack.includes(query.toLowerCase());
   });
 
-  if (currentUser.role !== 'admin') {
+  if (!isAdminRole(currentUser.role)) {
     return (
       <div className="page-grid">
         <Panel>
