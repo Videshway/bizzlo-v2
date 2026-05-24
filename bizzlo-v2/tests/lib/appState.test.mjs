@@ -42,7 +42,16 @@ test('Course Finder full catalogue loads in pages without shrinking sync data', 
 
   assert.match(source, /const courseCatalogPageSize = 5000/);
   assert.match(source, /const courseCatalogUiFlushRows = 5000/);
+  assert.match(source, /const loadCourseCatalogCount = useCallback/);
   assert.match(source, /async \(options = \{\}\) =>/);
   assert.match(source, /mergeCourseRows\(current, rowsToFlush\)/);
   assert.match(source, /effectivePageSize = mappedRows\.length/);
+});
+
+test('new student codes do not reuse the visible student count', async () => {
+  const source = await readFile(sourcePath, 'utf8');
+
+  assert.match(source, /function makeStudentCode/);
+  assert.match(source, /students_student_code_key/);
+  assert.doesNotMatch(source, /students\.length \+ 1/);
 });
