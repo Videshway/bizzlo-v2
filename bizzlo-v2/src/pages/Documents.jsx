@@ -5,10 +5,18 @@ import { Badge, Panel, SelectInput, StatusBadge, TextInput } from '../components
 
 const documentTypes = ['Passport', 'Academic Transcript', 'Degree Certificate', 'IELTS', 'SOP', 'LOR', 'CV', 'Bank Statement', 'Visa Document'];
 
-function triggerDownload({ url, filename, revoke }) {
+function triggerDownload({ url, filename, revoke }, preparedWindow = null) {
+  if (preparedWindow && !preparedWindow.closed) {
+    preparedWindow.location.href = url;
+    if (revoke) window.setTimeout(() => URL.revokeObjectURL(url), 500);
+    return;
+  }
+
   const link = document.createElement('a');
   link.href = url;
   link.download = filename;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
   document.body.appendChild(link);
   link.click();
   link.remove();
@@ -79,10 +87,17 @@ export function Documents() {
   async function handleDownload(documentId) {
     setDownloadId(documentId);
     setDownloadError('');
+    const preparedWindow = window.open('about:blank', '_blank');
+    if (preparedWindow) {
+      preparedWindow.opener = null;
+      preparedWindow.document.title = 'Preparing Bizzlo document...';
+      preparedWindow.document.body.innerHTML = '<p style="font-family: system-ui, sans-serif; padding: 24px;">Preparing secure Bizzlo document download...</p>';
+    }
     try {
       const download = await getDocumentDownloadUrl(documentId);
-      triggerDownload(download);
+      triggerDownload(download, preparedWindow);
     } catch (error) {
+      if (preparedWindow && !preparedWindow.closed) preparedWindow.close();
       setDownloadError(error?.message || 'Could not prepare this document download.');
     } finally {
       setDownloadId('');
