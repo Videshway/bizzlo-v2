@@ -25,10 +25,9 @@ const partnerEditableStatuses = new Set([
   'profile_incomplete',
   'documents_pending',
   'ready_for_admin_review',
-  'pending_admin_review',
   'admin_changes_requested',
-  'rejected',
 ]);
+const submittedDocumentStatuses = new Set(['uploaded', 'approved']);
 
 function mapProfile(profile) {
   return {
@@ -377,6 +376,10 @@ function applicationWorkflowPatch(status) {
   }
 
   return patch;
+}
+
+function statusCopy(value) {
+  return String(value || '').replace(/_/g, ' ');
 }
 
 export function AppStateProvider({ children }) {
@@ -1713,6 +1716,7 @@ export function AppStateProvider({ children }) {
   async function updateApplicationStatus(applicationId, status) {
     requireUser(currentUser);
     setAppError('');
+    const currentApplication = applications.find((item) => item.id === applicationId);
 
     if (currentUser.role !== 'admin' && !partnerEditableStatuses.has(status)) {
       const error = new Error('Only Videshway admin can move an application into university, offer, visa, or enrollment stages.');
@@ -1720,24 +1724,60 @@ export function AppStateProvider({ children }) {
       throw error;
     }
 
+    if (currentUser.role !== 'admin' && currentApplication && !partnerEditableStatuses.has(currentApplication.status)) {
+      const error = new Error('This file is already with Videshway admin. Wait for the admin update or request changes.');
+      setAppError(error.message);
+      throw error;
+    }
+
+    if (currentUser.role !== 'admin' && status === 'ready_for_admin_review') {
+      const submittedDocuments = documents.filter((document) => (
+        (
+          document.application_id === applicationId
+          || (!document.application_id && document.student_id === currentApplication?.student_id)
+        )
+        && submittedDocumentStatuses.has(document.status)
+      ));
+      if (!submittedDocuments.length) {
+        const error = new Error('Upload at least one student document before sending this file to Videshway admin.');
+        setAppError(error.message);
+        throw error;
+      }
+    }
+
     const patch = applicationWorkflowPatch(status);
+    const statusNote = currentUser.role === 'admin'
+      ? `Videshway admin updated this application to ${statusCopy(status)}.`
+      : status === 'ready_for_admin_review'
+        ? 'Partner submitted uploaded documents for Videshway admin review.'
+        : '';
 
     if (!isSupabaseConfigured) {
-      const application = applications.find((item) => item.id === applicationId);
       setApplications((prev) => prev.map((application) => (
         application.id === applicationId
           ? { ...application, ...patch }
           : application
       )));
-      if (application && status === 'deposit_paid' && !commissions.some((commission) => commission.application_id === applicationId)) {
+      if (statusNote) {
+        setApplicationNotes((prev) => [{
+          id: `note-${Date.now()}`,
+          application_id: applicationId,
+          author_id: currentUser.id,
+          author_name: currentUser.name,
+          body: statusNote,
+          status,
+          created_at: new Date().toISOString(),
+        }, ...prev]);
+      }
+      if (currentApplication && status === 'deposit_paid' && !commissions.some((commission) => commission.application_id === applicationId)) {
         setCommissions((prev) => [{
           id: `comm-${Date.now()}`,
-          organization_id: application.organization_id || currentUser.organization_id,
+          organization_id: currentApplication.organization_id || currentUser.organization_id,
           application_id: applicationId,
-          student_id: application.student_id,
-          manager_id: application.manager_id,
-          university: application.university,
-          course: application.course,
+          student_id: currentApplication.student_id,
+          manager_id: currentApplication.manager_id,
+          university: currentApplication.university,
+          course: currentApplication.course,
           expected_amount: 0,
           currency: 'INR',
           status: 'projected',
@@ -1760,6 +1800,22 @@ export function AppStateProvider({ children }) {
       throw error;
     }
     setApplications((prev) => prev.map((application) => (application.id === applicationId ? data : application)));
+    if (statusNote) {
+      const { data: eventData } = await supabase
+        .from('application_events')
+        .insert({
+          application_id: applicationId,
+          actor_id: currentUser.id,
+          status,
+          note: statusNote,
+        })
+        .select('*, actor:profiles(full_name)')
+        .single();
+
+      if (eventData) {
+        setApplicationNotes((prev) => [mapApplicationNote(eventData), ...prev]);
+      }
+    }
     await refreshData();
   }
 
