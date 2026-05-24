@@ -657,6 +657,7 @@ export function CourseFinder({ onNavigate }) {
     courses,
     currentUser,
     loadCourseCatalogCount,
+    loadFullCourseCatalog,
     searchCourses,
     visibleStudents,
   } = useAppState();
@@ -711,7 +712,8 @@ export function CourseFinder({ onNavigate }) {
 
   useEffect(() => {
     loadCourseCatalogCount?.().catch(() => {});
-  }, [loadCourseCatalogCount]);
+    loadFullCourseCatalog?.().catch(() => {});
+  }, [loadCourseCatalogCount, loadFullCourseCatalog]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -1013,7 +1015,7 @@ export function CourseFinder({ onNavigate }) {
 
       {loadingFullCatalog ? (
         <div className="system-banner info">
-          Loading live course matches: {(courseCatalogStatus?.totalLoaded || partnerCourses.length).toLocaleString()}
+          Loading full partner catalogue: {(courseCatalogStatus?.totalLoaded || partnerCourses.length).toLocaleString()}
           {courseCatalogStatus?.totalAvailable ? ` of ${courseCatalogStatus.totalAvailable.toLocaleString()}` : ''} programmes indexed.
         </div>
       ) : null}
