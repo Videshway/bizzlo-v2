@@ -1492,7 +1492,7 @@ export function AppStateProvider({ children }) {
         if (!query) return true;
         return `${course.university} ${course.course} ${course.subject} ${course.city} ${course.country}`.toLowerCase().includes(query);
       }).slice(filters.offset || 0, (filters.offset || 0) + (filters.limit || 100));
-      setCourses(rows);
+      setCourses((current) => (filters.append ? mergeCourseRows(current, rows) : rows));
       return rows;
     }
 
@@ -1509,10 +1509,10 @@ export function AppStateProvider({ children }) {
       throw error;
     }
     const mapped = (data || []).map(mapCourse);
-    setCourses(mapped);
+    setCourses((current) => (filters.append ? mergeCourseRows(current, mapped) : mapped));
     setCourseCatalogStatus((current) => ({
       ...current,
-      totalLoaded: mapped.length,
+      totalLoaded: filters.append ? Math.max(current.totalLoaded || 0, (filters.offset || 0) + mapped.length) : mapped.length,
       totalAvailable: Math.max(current.totalAvailable || 0, mapped.length),
       lastError: '',
     }));
