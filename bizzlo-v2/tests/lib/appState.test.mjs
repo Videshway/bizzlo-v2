@@ -40,8 +40,8 @@ test('sign in tries portal username fallback for email identifiers', async () =>
 test('Course Finder full catalogue loads in pages without shrinking sync data', async () => {
   const source = await readFile(sourcePath, 'utf8');
 
-  assert.match(source, /const courseCatalogPageSize = 5000/);
-  assert.match(source, /const courseCatalogUiFlushRows = 5000/);
+  assert.match(source, /const courseCatalogPageSize = 2500/);
+  assert.match(source, /const courseCatalogUiFlushRows = 2500/);
   assert.match(source, /const loadCourseCatalogCount = useCallback/);
   assert.match(source, /async \(options = \{\}\) =>/);
   assert.match(source, /mergeCourseRows\(current, rowsToFlush\)/);
@@ -49,11 +49,14 @@ test('Course Finder full catalogue loads in pages without shrinking sync data', 
   assert.match(source, /effectivePageSize = mappedRows\.length/);
 });
 
-test('Course Finder initial sync uses balanced live search instead of arbitrary first rows', async () => {
+test('Course Finder initial sync uses a timeout-safe catalog page query', async () => {
   const source = await readFile(sourcePath, 'utf8');
 
-  assert.match(source, /supabase\.rpc\('search_courses'/);
-  assert.match(source, /filter_intake: 'September'/);
+  assert.match(source, /function buildCourseCatalogQuery/);
+  assert.match(source, /Promise\.resolve\(\{ data: \[\], error: null \}\)/);
+  assert.match(source, /async function searchCourses/);
+  assert.match(source, /fetchCourseCatalogPage\(filters\)/);
+  assert.doesNotMatch(source, /supabase\.rpc\('search_courses'/);
   assert.doesNotMatch(source, /from\('courses'\)\.select\('\*'\)\.eq\('is_active', true\)\.limit\(100\)/);
 });
 
