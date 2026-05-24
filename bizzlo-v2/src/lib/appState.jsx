@@ -1995,9 +1995,9 @@ export function AppStateProvider({ children }) {
       throw error;
     }
 
-    await logAuditEvent('documents', documentId, 'document_downloaded', {
+    logAuditEvent('documents', documentId, 'document_downloaded', {
       filename: document.filename || document.original_filename || 'student-document',
-    });
+    }).catch(() => {});
 
     return {
       url: data.signedUrl,
