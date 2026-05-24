@@ -79,6 +79,8 @@ const finderIntakes = [
   'Winter',
 ];
 
+const liveSearchPageSize = 100;
+
 const finderYears = ['All', '2026', '2027', '2028'];
 
 const budgetOptions = [
@@ -630,6 +632,8 @@ export function CourseFinder({ onNavigate }) {
   const [showImportModal, setShowImportModal] = useState(false);
   const [ruleCount, setRuleCount] = useState(0);
   const [catalogSearching, setCatalogSearching] = useState(false);
+  const [liveSearchOffset, setLiveSearchOffset] = useState(0);
+  const [liveSearchHasMore, setLiveSearchHasMore] = useState(false);
   const [applyError, setApplyError] = useState('');
   const [applySuccess, setApplySuccess] = useState('');
   const searchDebounceRef = useRef(null);
@@ -784,14 +788,16 @@ export function CourseFinder({ onNavigate }) {
     setCatalogSearching(true);
     setApplyError('');
     try {
-      await searchCourses?.({
+      const rows = await searchCourses?.({
         country,
         level,
         intake: intakeFilter,
         query: nextQuery,
-        limit: 100,
+        limit: liveSearchPageSize,
         offset: 0,
       });
+      setLiveSearchOffset(rows?.length || 0);
+      setLiveSearchHasMore((rows?.length || 0) === liveSearchPageSize);
     } catch (error) {
       setApplyError(error?.message || 'Could not search the live course catalogue.');
     } finally {
@@ -804,7 +810,34 @@ export function CourseFinder({ onNavigate }) {
     setSearchDraft('');
     setQuery('');
     setPaging({ key: '', limit: 60 });
+    setLiveSearchOffset(0);
+    setLiveSearchHasMore(false);
     setApplyError('');
+  }
+
+  async function handleLoadMoreLiveResults() {
+    if (!isSupabaseConfigured || catalogSearching) return;
+    setCatalogSearching(true);
+    setApplyError('');
+    try {
+      const rows = await searchCourses?.({
+        country,
+        level,
+        intake: intakeFilter,
+        query,
+        limit: liveSearchPageSize,
+        offset: liveSearchOffset,
+        append: true,
+      });
+      const loadedRows = rows?.length || 0;
+      setLiveSearchOffset((current) => current + loadedRows);
+      setLiveSearchHasMore(loadedRows === liveSearchPageSize);
+      setPaging({ key: filterKey, limit: visibleLimit + liveSearchPageSize });
+    } catch (error) {
+      setApplyError(error?.message || 'Could not load more live course results.');
+    } finally {
+      setCatalogSearching(false);
+    }
   }
 
   async function handleLoadFullCatalog() {
@@ -1025,6 +1058,7 @@ export function CourseFinder({ onNavigate }) {
         <span>
           {`${compareCourses.length}/24 selected for comparison`}
         </span>
+        {liveSearchOffset ? <span>{liveSearchOffset.toLocaleString()} live matches loaded</span> : null}
         <div className="result-actions">
           <button className="secondary-button" type="button" onClick={() => downloadCourses('bizzlo-top-25-programs.csv', sortedFiltered.slice(0, 25), selectedStudent)}>
             <Download size={15} />
@@ -1175,6 +1209,14 @@ export function CourseFinder({ onNavigate }) {
         <div className="list-footer">
           <button className="secondary-button" type="button" onClick={() => setPaging({ key: filterKey, limit: visibleLimit + 60 })}>
             Show more programmes
+          </button>
+        </div>
+      ) : null}
+
+      {liveSearchHasMore ? (
+        <div className="list-footer">
+          <button className="secondary-button" type="button" disabled={catalogSearching} onClick={handleLoadMoreLiveResults}>
+            {catalogSearching ? 'Loading...' : 'Load more live results'}
           </button>
         </div>
       ) : null}
