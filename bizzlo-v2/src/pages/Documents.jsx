@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Download, FileCheck2, FileDown, ShieldCheck, UploadCloud } from 'lucide-react';
 import { useAppState } from '../lib/appState';
 import { Badge, Panel, SelectInput, StatusBadge, TextInput } from '../components/ui';
@@ -20,6 +20,7 @@ export function Documents() {
     addDocument,
     currentUser,
     getDocumentDownloadUrl,
+    refreshDocuments,
     updateDocumentStatus,
     users,
     visibleApplications,
@@ -29,6 +30,7 @@ export function Documents() {
   const [submitting, setSubmitting] = useState(false);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [downloadId, setDownloadId] = useState('');
+  const [downloadError, setDownloadError] = useState('');
   const [filter, setFilter] = useState('all');
   const [formError, setFormError] = useState('');
   const [form, setForm] = useState({
@@ -51,6 +53,10 @@ export function Documents() {
   const pendingReview = visibleDocuments.filter((documentRow) => ['uploaded', 'documents_pending'].includes(documentRow.status)).length;
   const approvedCount = visibleDocuments.filter((documentRow) => documentRow.status === 'approved').length;
 
+  useEffect(() => {
+    refreshDocuments?.().catch(() => {});
+  }, [refreshDocuments]);
+
   async function handleSubmit(event) {
     event.preventDefault();
     setFormError('');
@@ -63,6 +69,8 @@ export function Documents() {
       await addDocument({ ...form, student_id: selectedStudentId, filename: form.filename || form.file?.name || `${form.type.toLowerCase().replaceAll(' ', '-')}.pdf` });
       setForm({ ...form, filename: '', file: null });
       setFileInputKey((prev) => prev + 1);
+    } catch (error) {
+      setFormError(error?.message || 'Could not upload this document.');
     } finally {
       setSubmitting(false);
     }
@@ -70,9 +78,12 @@ export function Documents() {
 
   async function handleDownload(documentId) {
     setDownloadId(documentId);
+    setDownloadError('');
     try {
       const download = await getDocumentDownloadUrl(documentId);
       triggerDownload(download);
+    } catch (error) {
+      setDownloadError(error?.message || 'Could not prepare this document download.');
     } finally {
       setDownloadId('');
     }
@@ -154,6 +165,7 @@ export function Documents() {
           </SelectInput>
         )}
       >
+        {downloadError ? <p className="form-error">{downloadError}</p> : null}
         <div className="table-wrap">
           <table>
             <thead>
@@ -188,7 +200,7 @@ export function Documents() {
                     </td>
                     <td>{documentRow.note || '-'}</td>
                     <td>
-                      <button className="row-icon-button" type="button" disabled={downloadId === documentRow.id} onClick={() => handleDownload(documentRow.id).catch(() => {})}>
+                      <button className="row-icon-button" type="button" disabled={downloadId === documentRow.id} onClick={() => handleDownload(documentRow.id)}>
                         {downloadId === documentRow.id ? <FileDown size={15} /> : <Download size={15} />}
                         {downloadId === documentRow.id ? 'Preparing' : 'Download'}
                       </button>
