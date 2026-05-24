@@ -74,6 +74,27 @@ test('course apply returns without waiting for a full dashboard refresh', async 
   assert.doesNotMatch(addApplicationBlock, /await refreshData\(\)/);
 });
 
+test('production state does not boot with demo profile IDs', async () => {
+  const source = await readFile(sourcePath, 'utf8');
+
+  assert.match(source, /useState\(isDemoMode \? seedStudents : \[\]\)/);
+  assert.match(source, /useState\(isDemoMode \? seedUsers : \[\]\)/);
+  assert.match(source, /useState\(isDemoMode \? seedApplications : \[\]\)/);
+  assert.doesNotMatch(source, /useState\(seedStudents\)/);
+  assert.doesNotMatch(source, /useState\(seedUsers\)/);
+});
+
+test('application creation strips demo ids before Supabase insert', async () => {
+  const source = await readFile(sourcePath, 'utf8');
+  const addApplicationBlock = source.match(/async function addApplication[\s\S]*?async function addCourse/)?.[0] || '';
+
+  assert.match(addApplicationBlock, /!isUuid\(application\.student_id\)/);
+  assert.match(addApplicationBlock, /uuidOrNull\(student\?\.manager_id\)/);
+  assert.match(addApplicationBlock, /uuidOrNull\(student\?\.counselor_id\)/);
+  assert.doesNotMatch(addApplicationBlock, /manager_id: student\?\.manager_id \|\| currentUser\.id/);
+  assert.doesNotMatch(addApplicationBlock, /counselor_id: student\?\.counselor_id \|\| currentUser\.id/);
+});
+
 test('document refresh is targeted for admin review queues', async () => {
   const source = await readFile(sourcePath, 'utf8');
 
