@@ -647,7 +647,14 @@ export function AppStateProvider({ children }) {
           .order('created_at', { ascending: false })
           .range(0, 199),
         supabase.from('documents').select('*').order('created_at', { ascending: false }).range(0, 249),
-        supabase.from('courses').select('*').eq('is_active', true).limit(100),
+        supabase.rpc('search_courses', {
+          filter_country: 'All',
+          filter_level: 'All',
+          filter_intake: 'September',
+          filter_query: '',
+          page_limit: 100,
+          page_offset: 0,
+        }),
         supabase.from('tasks').select('*').order('status', { ascending: true }).order('due_date', { ascending: true }).range(0, 99),
         isCounselorProfile
           ? Promise.resolve({ data: [], error: null })
