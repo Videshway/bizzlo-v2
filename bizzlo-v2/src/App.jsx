@@ -1,3 +1,4 @@
+
 import { useCallback, useEffect, useState } from 'react';
 import { AuthScreen } from './components/AuthScreen';
 import { CookieConsent } from './components/CookieConsent';
@@ -9,13 +10,11 @@ import { Commissions } from './pages/Commissions';
 import { CourseFinder } from './pages/CourseFinder';
 import { Dashboard } from './pages/Dashboard';
 import { Documents } from './pages/Documents';
-import { Intake } from './pages/Intake';
 import { PrivacyPolicy, TermsOfService } from './pages/Legal';
-import { Resources, Support } from './pages/StaticInfo';
+import { Support } from './pages/StaticInfo';
 import { StudentPortal } from './pages/StudentPortal';
 import { StudentSelfServiceApp } from './pages/StudentSelfService';
 import { Students } from './pages/Students';
-import { Tasks } from './pages/Tasks';
 import { Team } from './pages/Team';
 
 function NotFound({ onNavigate }) {
@@ -36,15 +35,12 @@ function NotFound({ onNavigate }) {
 
 const pages = {
   dashboard: Dashboard,
-  intake: Intake,
   students: Students,
   applications: Applications,
   documents: Documents,
   courses: CourseFinder,
   team: Team,
-  tasks: Tasks,
   commissions: Commissions,
-  resources: Resources,
   support: Support,
   audit: Audit,
   studentPortal: StudentPortal,
@@ -55,15 +51,12 @@ const pages = {
 
 const pagePaths = {
   dashboard: '/',
-  intake: '/intake',
   students: '/students',
   applications: '/applications',
   documents: '/documents',
   courses: '/program-search',
   team: '/team',
-  tasks: '/tasks',
   commissions: '/finance',
-  resources: '/resources',
   support: '/support',
   audit: '/audit',
   studentPortal: '/student-link',
