@@ -170,6 +170,10 @@ function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
 }
 
+function uuidOrNull(value) {
+  return isUuid(value) ? value : null;
+}
+
 function normalizeCourseRecord(course, index = 0) {
   const normalized = {
     ...course,
@@ -383,27 +387,27 @@ export function AppStateProvider({ children }) {
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
   const [dataLoading, setDataLoading] = useState(false);
   const [appError, setAppError] = useState('');
-  const [organizations, setOrganizations] = useState(seedOrganizations);
-  const [accountRequests, setAccountRequests] = useState(seedAccountRequests);
-  const [users, setUsers] = useState(seedUsers);
+  const [organizations, setOrganizations] = useState(isDemoMode ? seedOrganizations : []);
+  const [accountRequests, setAccountRequests] = useState(isDemoMode ? seedAccountRequests : []);
+  const [users, setUsers] = useState(isDemoMode ? seedUsers : []);
   const [currentUser, setCurrentUser] = useState(isDemoMode ? seedUsers[1] : null);
-  const [students, setStudents] = useState(seedStudents);
-  const [applications, setApplications] = useState(seedApplications);
-  const [applicationNotes, setApplicationNotes] = useState(seedApplicationNotes);
-  const [documents, setDocuments] = useState(seedDocuments);
-  const [courses, setCourses] = useState(seedCourses);
+  const [students, setStudents] = useState(isDemoMode ? seedStudents : []);
+  const [applications, setApplications] = useState(isDemoMode ? seedApplications : []);
+  const [applicationNotes, setApplicationNotes] = useState(isDemoMode ? seedApplicationNotes : []);
+  const [documents, setDocuments] = useState(isDemoMode ? seedDocuments : []);
+  const [courses, setCourses] = useState(isDemoMode ? seedCourses : []);
   const [courseCatalogStatus, setCourseCatalogStatus] = useState(() => ({
     isLoadingFull: false,
-    isFullCatalogLoaded: !isSupabaseConfigured,
-    totalLoaded: seedCourses.length,
-    totalAvailable: seedCourses.length,
+    isFullCatalogLoaded: isDemoMode,
+    totalLoaded: isDemoMode ? seedCourses.length : 0,
+    totalAvailable: isDemoMode ? seedCourses.length : 0,
     lastError: '',
   }));
   const [loadedCatalogCountries, setLoadedCatalogCountries] = useState(new Set());
   const [catalogLoadingCountry, setCatalogLoadingCountry] = useState('');
-  const [tasks, setTasks] = useState(seedTasks);
-  const [commissions, setCommissions] = useState(seedCommissions);
-  const [partnerFinanceProfiles, setPartnerFinanceProfiles] = useState(seedPartnerFinanceProfiles);
+  const [tasks, setTasks] = useState(isDemoMode ? seedTasks : []);
+  const [commissions, setCommissions] = useState(isDemoMode ? seedCommissions : []);
+  const [partnerFinanceProfiles, setPartnerFinanceProfiles] = useState(isDemoMode ? seedPartnerFinanceProfiles : []);
   const [serviceRequests, setServiceRequests] = useState([]);
   const [supportTickets, setSupportTickets] = useState([]);
   const [auditEvents, setAuditEvents] = useState([]);
@@ -412,7 +416,7 @@ export function AppStateProvider({ children }) {
   const [activeInviteStudentId, setActiveInviteStudentId] = useState('');
   const [activeInviteUrl, setActiveInviteUrl] = useState('');
   const fullCatalogLoadRef = useRef(null);
-  const fullCatalogLoadedRef = useRef(!isSupabaseConfigured);
+  const fullCatalogLoadedRef = useRef(isDemoMode);
 
   useEffect(() => {
     if (!isDemoMode) return undefined;
@@ -1045,8 +1049,8 @@ export function AppStateProvider({ children }) {
 
     const payload = {
       organization_id: organizationId,
-      manager_id: managerId,
-      counselor_id: counselorId,
+      manager_id: uuidOrNull(managerId),
+      counselor_id: uuidOrNull(counselorId),
       student_code: makeStudentCode(students),
       first_name: student.first_name,
       last_name: student.last_name,
@@ -1449,14 +1453,26 @@ export function AppStateProvider({ children }) {
     setAppError('');
 
     const student = students.find((item) => item.id === application.student_id);
+    if (isSupabaseConfigured && !isUuid(application.student_id)) {
+      const error = new Error('Choose a synced student profile before creating the application.');
+      setAppError(error.message);
+      throw error;
+    }
+
+    const fallbackManagerId = currentUser.role === 'manager' ? currentUser.id : currentUser.manager_id;
+    const fallbackCounselorId = currentUser.role === 'counselor' ? currentUser.id : null;
     const baseApplication = {
+      ...application,
       status: 'documents_pending',
       fee_status: 'not_paid',
       deposit_status: 'not_due',
-      manager_id: student?.manager_id || currentUser.id,
-      counselor_id: student?.counselor_id || currentUser.id,
+      manager_id: isSupabaseConfigured
+        ? uuidOrNull(student?.manager_id) || uuidOrNull(fallbackManagerId)
+        : student?.manager_id || currentUser.id,
+      counselor_id: isSupabaseConfigured
+        ? uuidOrNull(student?.counselor_id) || uuidOrNull(fallbackCounselorId)
+        : student?.counselor_id || currentUser.id,
       updated_at: new Date().toISOString(),
-      ...application,
     };
 
     if (!isSupabaseConfigured) {
