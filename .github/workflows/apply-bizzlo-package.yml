@@ -1,0 +1,52 @@
+name: Apply Bizzlo package
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.deploy/bizzlo-v2-pranav-workflow-fix-20260525-final.zip'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply verified Bizzlo package
+        run: |
+          set -euo pipefail
+          PACKAGE=".deploy/bizzlo-v2-pranav-workflow-fix-20260525-final.zip"
+          if [ ! -f "$PACKAGE" ]; then
+            echo "Package not found: $PACKAGE"
+            exit 1
+          fi
+          rm -rf /tmp/bizzlo-package
+          mkdir -p /tmp/bizzlo-package
+          unzip -q "$PACKAGE" -d /tmp/bizzlo-package
+          rsync -a --delete --exclude 'node_modules/' --exclude 'dist/' /tmp/bizzlo-package/bizzlo-v2/ bizzlo-v2/
+          cp /tmp/bizzlo-package/vercel.json vercel.json
+          cp /tmp/bizzlo-package/.vercelignore .vercelignore
+          cp /tmp/bizzlo-package/README.md README.md
+          rm -f bizzlo-v2/vercel.json
+          git rm -f "$PACKAGE"
+          git add -A bizzlo-v2 vercel.json .vercelignore README.md .deploy
+          git status --short
+
+      - name: Commit applied package
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+            exit 0
+          fi
+          git commit -m "Deploy Bizzlo workflow and production fixes"
+          git push origin HEAD:main
