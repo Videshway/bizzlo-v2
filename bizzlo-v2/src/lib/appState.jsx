@@ -1428,6 +1428,12 @@ export function AppStateProvider({ children }) {
       throw error;
     }
 
+    if (isSupabaseConfigured && !isUuid(student.id)) {
+      const error = new Error('Choose a synced student profile before opening the student link.');
+      setAppError(error.message);
+      throw error;
+    }
+
     const token = isSupabaseConfigured ? makeInviteToken() : `demo-${student.id}`;
     const link = studentInviteUrl(student, token);
 
@@ -1567,10 +1573,10 @@ export function AppStateProvider({ children }) {
       throw error;
     }
     const mapped = (data || []).map(mapCourse);
-    setCourses((current) => (filters.append ? mergeCourseRows(current, mapped) : mapped));
+    setCourses((current) => mergeCourseRows(current, mapped));
     setCourseCatalogStatus((current) => ({
       ...current,
-      totalLoaded: filters.append ? Math.max(current.totalLoaded || 0, (filters.offset || 0) + mapped.length) : mapped.length,
+      totalLoaded: Math.max(current.totalLoaded || 0, current.length, (filters.offset || 0) + mapped.length, mapped.length),
       totalAvailable: Math.max(current.totalAvailable || 0, mapped.length),
       lastError: '',
     }));
@@ -1879,13 +1885,25 @@ export function AppStateProvider({ children }) {
       return demoTask;
     }
 
+    if (nextTask.student_id && !isUuid(nextTask.student_id)) {
+      const error = new Error('Choose a synced student profile before creating this task.');
+      setAppError(error.message);
+      throw error;
+    }
+
+    if (nextTask.application_id && !isUuid(nextTask.application_id)) {
+      const error = new Error('Choose a synced application before linking this task.');
+      setAppError(error.message);
+      throw error;
+    }
+
     const { data, error } = await supabase
       .from('tasks')
       .insert({
         organization_id: nextTask.organization_id,
-        student_id: nextTask.student_id || null,
-        application_id: nextTask.application_id || null,
-        assigned_to: nextTask.assigned_to,
+        student_id: uuidOrNull(nextTask.student_id),
+        application_id: uuidOrNull(nextTask.application_id),
+        assigned_to: uuidOrNull(nextTask.assigned_to),
         title: nextTask.title,
         priority: nextTask.priority,
         due_date: nextTask.due_date,
@@ -2191,6 +2209,12 @@ export function AppStateProvider({ children }) {
         task.id === taskId ? { ...task, status: 'done' } : task
       )));
       return;
+    }
+
+    if (!isUuid(taskId)) {
+      const error = new Error('This task is from demo data. Refresh after signing in before marking it done.');
+      setAppError(error.message);
+      throw error;
     }
 
     const { data, error } = await supabase
