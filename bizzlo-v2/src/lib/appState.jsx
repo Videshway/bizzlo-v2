@@ -18,7 +18,8 @@ import { captureEvent } from './telemetry';
 
 const AppStateContext = createContext(null);
 const documentBucket = 'student-documents';
-const courseCatalogPageSize = 1000;
+const courseCatalogPageSize = 5000;
+const courseCatalogUiFlushRows = 5000;
 const courseCatalogMaxRows = 75000;
 const partnerEditableStatuses = new Set([
   'profile_incomplete',
@@ -457,33 +458,57 @@ export function AppStateProvider({ children }) {
       }));
 
       const loadedRows = [];
+      let pendingRows = [];
       let totalAvailable = 0;
+      let offset = 0;
+      let effectivePageSize = courseCatalogPageSize;
 
-      for (let offset = 0; offset < courseCatalogMaxRows; offset += courseCatalogPageSize) {
+      while (offset < courseCatalogMaxRows) {
         const selectOptions = offset === 0 ? { count: 'exact' } : undefined;
         const { data, error, count } = await supabase
           .from('courses')
           .select('*', selectOptions)
           .eq('is_active', true)
-          .order('country', { ascending: true })
-          .order('university', { ascending: true })
-          .order('course', { ascending: true })
-          .range(offset, offset + courseCatalogPageSize - 1);
+          .order('catalog_key', { ascending: true })
+          .range(offset, offset + effectivePageSize - 1);
 
         if (error) throw error;
 
         const mappedRows = (data || []).map(mapCourse);
         if (offset === 0) totalAvailable = count || mappedRows.length;
+        if (!mappedRows.length) break;
+
+        if (mappedRows.length < effectivePageSize && totalAvailable > mappedRows.length && offset === 0) {
+          effectivePageSize = mappedRows.length;
+        }
+
         loadedRows.push(...mappedRows);
-        setCourses((current) => mergeCourseRows(current, mappedRows));
+        pendingRows.push(...mappedRows);
+        const shouldFlushRows =
+          pendingRows.length >= courseCatalogUiFlushRows ||
+          (totalAvailable && loadedRows.length >= totalAvailable) ||
+          mappedRows.length < effectivePageSize;
+
+        if (shouldFlushRows) {
+          const rowsToFlush = pendingRows;
+          pendingRows = [];
+          setCourses((current) => mergeCourseRows(current, rowsToFlush));
+        }
+
         setCourseCatalogStatus((current) => ({
           ...current,
           totalLoaded: loadedRows.length,
           totalAvailable: Math.max(totalAvailable, loadedRows.length),
         }));
 
-        if (mappedRows.length < courseCatalogPageSize) break;
+        offset += mappedRows.length;
+
+        if (mappedRows.length < effectivePageSize) break;
         if (totalAvailable && loadedRows.length >= totalAvailable) break;
+      }
+
+      if (pendingRows.length) {
+        setCourses((current) => mergeCourseRows(current, pendingRows));
       }
 
       setCourseCatalogStatus({
