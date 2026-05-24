@@ -693,6 +693,11 @@ export function CourseFinder({ onNavigate }) {
   const [applyError, setApplyError] = useState('');
   const [applySuccess, setApplySuccess] = useState('');
   const searchDebounceRef = useRef(null);
+  const searchCoursesRef = useRef(searchCourses);
+
+  useEffect(() => {
+    searchCoursesRef.current = searchCourses;
+  }, [searchCourses]);
 
   useEffect(() => {
     let active = true;
@@ -720,7 +725,7 @@ export function CourseFinder({ onNavigate }) {
   }, [searchDraft]);
 
   useEffect(() => {
-    if (!isSupabaseConfigured || !searchCourses) return undefined;
+    if (!isSupabaseConfigured || !searchCoursesRef.current) return undefined;
 
     let active = true;
 
@@ -728,7 +733,9 @@ export function CourseFinder({ onNavigate }) {
       if (!active) return [];
       setCatalogSearching(true);
       setApplyError('');
-      return searchCourses({
+      const runLiveSearch = searchCoursesRef.current;
+      if (!runLiveSearch) return [];
+      return runLiveSearch({
         country,
         level,
         intake: intakeFilter,
@@ -751,7 +758,7 @@ export function CourseFinder({ onNavigate }) {
     return () => {
       active = false;
     };
-  }, [country, intakeFilter, level, query, searchCourses]);
+  }, [country, intakeFilter, level, query]);
 
   const selectedStudent = visibleStudents.find((student) => student.id === selectedStudentId) || visibleStudents[0];
   const partnerCourses = useMemo(() => courses.filter(isPdfPartnerCourse), [courses]);
