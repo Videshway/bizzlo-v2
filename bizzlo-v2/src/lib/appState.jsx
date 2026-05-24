@@ -663,7 +663,7 @@ export function AppStateProvider({ children }) {
           .order('created_at', { ascending: false })
           .range(0, 199),
         supabase.from('documents').select('*').order('created_at', { ascending: false }).range(0, 249),
-        supabase.rpc('search_courses', {
+        fetchCourseCatalogPage({
           country: 'All',
           level: 'All',
           intake: 'September',
@@ -1590,7 +1590,7 @@ export function AppStateProvider({ children }) {
       return rows;
     }
 
-    const { data, error } = await supabase.rpc('search_courses', {
+    const { data, error } = await fetchCourseCatalogPage({
       country: filters.country || 'All',
       level: filters.level || 'All',
       intake: filters.intake || 'All',
