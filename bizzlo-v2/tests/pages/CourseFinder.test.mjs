@@ -21,6 +21,12 @@ test('CourseFinder debounces search updates by 250ms', async () => {
   assert.match(source, /setTimeout\([\s\S]*250\)/);
 });
 
+test('CourseFinder loads the full catalog outside dashboard sync', async () => {
+  const source = await readFile(courseFinderPath, 'utf8');
+  assert.match(source, /loadFullCourseCatalog/);
+  assert.doesNotMatch(source, /await searchCourses\(/);
+});
+
 test('demo seed exports at least 40 partner course rows', () => {
   assert.ok(Array.isArray(seedCourses));
   assert.ok(seedCourses.length >= 40);
