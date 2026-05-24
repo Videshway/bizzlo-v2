@@ -584,6 +584,25 @@ export function AppStateProvider({ children }) {
     return count || 0;
   }, [courses.length]);
 
+  const loadDocuments = useCallback(async () => {
+    if (!isSupabaseConfigured || !currentUser) return [];
+
+    const { data, error } = await supabase
+      .from('documents')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(0, 249);
+
+    if (error) {
+      setAppError(errorMessage(error));
+      throw error;
+    }
+
+    const mappedDocuments = (data || []).map(mapDocument);
+    setDocuments(mappedDocuments);
+    return mappedDocuments;
+  }, [currentUser]);
+
   const loadData = useCallback(async (profile) => {
     if (!isSupabaseConfigured || !profile) return;
 
@@ -627,7 +646,7 @@ export function AppStateProvider({ children }) {
           .select('*, actor:profiles(full_name)')
           .order('created_at', { ascending: false })
           .range(0, 199),
-        supabase.from('documents').select('*').order('created_at', { ascending: false }).range(0, 99),
+        supabase.from('documents').select('*').order('created_at', { ascending: false }).range(0, 249),
         supabase.from('courses').select('*').eq('is_active', true).limit(100),
         supabase.from('tasks').select('*').order('status', { ascending: true }).order('due_date', { ascending: true }).range(0, 99),
         isCounselorProfile
@@ -810,10 +829,15 @@ export function AppStateProvider({ children }) {
     await loadData(currentUser);
   }, [currentUser, loadData]);
   const refreshDataRef = useRef(refreshData);
+  const refreshDocumentsRef = useRef(loadDocuments);
 
   useEffect(() => {
     refreshDataRef.current = refreshData;
   }, [refreshData]);
+
+  useEffect(() => {
+    refreshDocumentsRef.current = loadDocuments;
+  }, [loadDocuments]);
 
   const currentUserId = currentUser?.id;
 
@@ -821,18 +845,25 @@ export function AppStateProvider({ children }) {
     if (!isSupabaseConfigured || !currentUserId) return undefined;
 
     let refreshTimer = null;
+    let documentsRefreshTimer = null;
     const scheduleRefresh = () => {
       window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(() => {
         refreshDataRef.current().catch(() => {});
       }, 350);
     };
+    const scheduleDocumentsRefresh = () => {
+      window.clearTimeout(documentsRefreshTimer);
+      documentsRefreshTimer = window.setTimeout(() => {
+        refreshDocumentsRef.current().catch(() => {});
+      }, 250);
+    };
 
     const channel = supabase
       .channel(`bizzlo-live-${currentUserId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'applications' }, scheduleRefresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'documents' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'documents' }, scheduleDocumentsRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'application_events' }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, scheduleRefresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'commissions' }, scheduleRefresh)
@@ -847,6 +878,7 @@ export function AppStateProvider({ children }) {
 
     return () => {
       window.clearTimeout(refreshTimer);
+      window.clearTimeout(documentsRefreshTimer);
       supabase.removeChannel(channel);
     };
   }, [currentUser?.role, currentUserId]);
@@ -1451,7 +1483,7 @@ export function AppStateProvider({ children }) {
     }
     setApplications((prev) => [data, ...prev]);
     captureEvent('application_created', { application_id: data.id, student_id: data.student_id }, currentUser);
-    await refreshData();
+    refreshDataRef.current().catch(() => {});
     return data;
   }
 
@@ -1860,6 +1892,7 @@ export function AppStateProvider({ children }) {
     const mappedDocument = mapDocument(data);
     setDocuments((prev) => [mappedDocument, ...prev]);
     captureEvent('document_uploaded', { document_id: data.id, student_id: data.student_id }, currentUser);
+    refreshDocumentsRef.current().catch(() => {});
     return mappedDocument;
   }
 
@@ -2297,6 +2330,7 @@ export function AppStateProvider({ children }) {
     loadCatalogCountry,
     loadCourseCatalogCount,
     loadFullCourseCatalog,
+    refreshDocuments: loadDocuments,
     updateApplicationStatus,
     addDocument,
     updateDocumentStatus,
