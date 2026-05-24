@@ -125,6 +125,23 @@ function downloadApplications(filename, rows, students) {
   window.setTimeout(() => URL.revokeObjectURL(url), 500);
 }
 
+function studentOptionLabel(student) {
+  if (!student) return '';
+  return `${student.first_name} ${student.last_name} - ${student.student_code || student.email || 'Student'}`;
+}
+
+function findStudentFromInput(value, students) {
+  const normalizedValue = String(value || '').trim().toLowerCase();
+  if (!normalizedValue) return null;
+  return students.find((student) => {
+    const fullName = `${student.first_name} ${student.last_name}`.trim().toLowerCase();
+    const label = studentOptionLabel(student).toLowerCase();
+    const email = String(student.email || '').toLowerCase();
+    const code = String(student.student_code || '').toLowerCase();
+    return [label, fullName, email, code].includes(normalizedValue);
+  }) || null;
+}
+
 export function Applications() {
   const {
     addApplication,
@@ -158,6 +175,8 @@ export function Applications() {
     course: '',
     intake: 'September',
   });
+  const [studentSearch, setStudentSearch] = useState(studentOptionLabel(visibleStudents[0]));
+  const [formError, setFormError] = useState('');
 
   const countries = useMemo(() => ['All', ...new Set(visibleApplications.map((application) => application.country).filter(Boolean).sort())], [visibleApplications]);
   const universities = useMemo(() => ['All', ...new Set(visibleApplications.map((application) => application.university).filter(Boolean).sort())], [visibleApplications]);
@@ -199,24 +218,46 @@ export function Applications() {
     ? adminStatuses
     : [...new Set([selectedApplication?.status, ...partnerEditableStatuses])].filter(Boolean);
 
-  function fromCourse(course) {
+  function openApplicationModal(nextFields = {}) {
+    const selectedFormStudent = visibleStudents.find((student) => student.id === form.student_id) || visibleStudents[0];
     setForm({
-      ...form,
+      student_id: selectedFormStudent?.id || '',
+      university: '',
+      country: '',
+      course: '',
+      intake: 'September',
+      ...nextFields,
+    });
+    setStudentSearch(studentOptionLabel(selectedFormStudent));
+    setFormError('');
+    setOpen(true);
+  }
+
+  function fromCourse(course) {
+    openApplicationModal({
+      student_id: form.student_id || visibleStudents[0]?.id || '',
       university: course.university,
       country: course.country,
       course: course.course,
       intake: intakeMonth(course.intake),
     });
-    setOpen(true);
   }
 
   async function handleSubmit(event) {
     event.preventDefault();
+    setFormError('');
+    const chosenStudent = visibleStudents.find((student) => student.id === form.student_id) || findStudentFromInput(studentSearch, visibleStudents);
+    if (!chosenStudent) {
+      setFormError('Select an existing student from the suggestions, or create the student in Intake first.');
+      return;
+    }
     setSubmitting(true);
     try {
-      const nextApplication = await addApplication({ ...form, student_id: form.student_id || visibleStudents[0]?.id });
+      const nextApplication = await addApplication({ ...form, student_id: chosenStudent.id });
       setSelectedApplicationId(nextApplication.id);
       setOpen(false);
+    } catch (error) {
+      setFormError(error?.message || 'Could not create this application.');
     } finally {
       setSubmitting(false);
     }
@@ -241,7 +282,7 @@ export function Applications() {
             <Download size={17} />
             Export Application Data
           </button>
-          <button className="primary-button" type="button" onClick={() => setOpen(true)}>
+          <button className="primary-button" type="button" onClick={() => openApplicationModal()}>
             <Plus size={17} />
             New application
           </button>
@@ -498,17 +539,34 @@ export function Applications() {
 
       <Modal open={open} onClose={() => setOpen(false)} title="Create Application" description="Attach one student to one course and start the document/admin workflow.">
         <form className="form-grid" onSubmit={handleSubmit}>
-          <SelectInput label="Student" required value={form.student_id || visibleStudents[0]?.id || ''} onChange={(event) => setForm({ ...form, student_id: event.target.value })}>
-            {visibleStudents.map((student) => (
-              <option key={student.id} value={student.id}>{student.first_name} {student.last_name}</option>
-            ))}
-          </SelectInput>
+          <label className="field">
+            <span>Student</span>
+            <input
+              list="application-student-options"
+              placeholder="Type student name, email, or code"
+              required
+              value={studentSearch}
+              onChange={(event) => {
+                const nextValue = event.target.value;
+                const matchedStudent = findStudentFromInput(nextValue, visibleStudents);
+                setStudentSearch(nextValue);
+                setForm({ ...form, student_id: matchedStudent?.id || '' });
+                setFormError('');
+              }}
+            />
+            <datalist id="application-student-options">
+              {visibleStudents.map((student) => (
+                <option key={student.id} value={studentOptionLabel(student)} />
+              ))}
+            </datalist>
+          </label>
           <TextInput label="University" required value={form.university} onChange={(event) => setForm({ ...form, university: event.target.value })} />
           <TextInput label="Country" required value={form.country} onChange={(event) => setForm({ ...form, country: event.target.value })} />
           <TextInput label="Course" required value={form.course} onChange={(event) => setForm({ ...form, course: event.target.value })} />
           <SelectInput label="Intake" required value={form.intake} onChange={(event) => setForm({ ...form, intake: event.target.value })}>
             {intakeOptions.map((item) => <option key={item}>{item}</option>)}
           </SelectInput>
+          {formError ? <p className="form-error form-wide">{formError}</p> : null}
           <footer className="form-footer">
             <button className="secondary-button" type="button" onClick={() => setOpen(false)}>Cancel</button>
             <button className="primary-button" type="submit" disabled={submitting}>{submitting ? 'Creating...' : 'Create application'}</button>
