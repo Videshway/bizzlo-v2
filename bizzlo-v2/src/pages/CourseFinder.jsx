@@ -81,6 +81,55 @@ const finderIntakes = [
 
 const liveSearchPageSize = 100;
 
+const partnerPdfCountries = [
+  'Australia',
+  'Austria',
+  'Bahrain',
+  'Belgium',
+  'Canada',
+  'China',
+  'Croatia',
+  'Cyprus',
+  'Denmark',
+  'Dubai',
+  'Finland',
+  'France',
+  'Georgia',
+  'Germany',
+  'Greece',
+  'Hungary',
+  'India',
+  'Indonesia',
+  'Ireland',
+  'Italy',
+  'Japan',
+  'Kazakhstan',
+  'Lithuania',
+  'Luxembourg',
+  'Malaysia',
+  'Malta',
+  'Mauritius',
+  'Monaco',
+  'Netherlands',
+  'New Zealand',
+  'Poland',
+  'Russia',
+  'Saudi Arabia',
+  'Singapore',
+  'South Korea',
+  'Spain',
+  'Sri Lanka',
+  'Sweden',
+  'Switzerland',
+  'Thailand',
+  'Turkey',
+  'United Kingdom',
+  'United States',
+  'Vietnam',
+];
+
+const partnerPdfLevels = ['Undergraduate', 'Postgraduate', 'Diploma'];
+
 const finderYears = ['All', '2026', '2027', '2028'];
 
 const budgetOptions = [
@@ -519,6 +568,14 @@ function isPdfPartnerCourse(course) {
     || /partner university/i.test(course.partner_note || course.commission_hint || '');
 }
 
+function optionList(staticOptions, loadedOptions) {
+  return ['All', ...new Set([...staticOptions, ...loadedOptions].filter(Boolean))].sort((a, b) => {
+    if (a === 'All') return -1;
+    if (b === 'All') return 1;
+    return a.localeCompare(b);
+  });
+}
+
 function matchesCommission(course, commissionFilter) {
   const rule = getCommissionRuleForCourse(course);
   if (commissionFilter === 'All partner statuses') return true;
@@ -600,7 +657,6 @@ export function CourseFinder({ onNavigate }) {
     courses,
     currentUser,
     loadCourseCatalogCount,
-    loadFullCourseCatalog,
     searchCourses,
     visibleStudents,
   } = useAppState();
@@ -663,10 +719,44 @@ export function CourseFinder({ onNavigate }) {
     };
   }, [searchDraft]);
 
+  useEffect(() => {
+    if (!isSupabaseConfigured || !searchCourses) return undefined;
+
+    let active = true;
+
+    Promise.resolve().then(() => {
+      if (!active) return [];
+      setCatalogSearching(true);
+      setApplyError('');
+      return searchCourses({
+        country,
+        level,
+        intake: intakeFilter,
+        query,
+        limit: liveSearchPageSize,
+        offset: 0,
+      });
+    }).then((rows) => {
+      if (!active) return;
+      setLiveSearchOffset(rows?.length || 0);
+      setLiveSearchHasMore((rows?.length || 0) === liveSearchPageSize);
+      setPaging({ key: '', limit: 60 });
+    }).catch((error) => {
+      if (!active) return;
+      setApplyError(error?.message || 'Could not search the live course catalogue.');
+    }).finally(() => {
+      if (active) setCatalogSearching(false);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [country, intakeFilter, level, query, searchCourses]);
+
   const selectedStudent = visibleStudents.find((student) => student.id === selectedStudentId) || visibleStudents[0];
   const partnerCourses = useMemo(() => courses.filter(isPdfPartnerCourse), [courses]);
-  const countries = useMemo(() => ['All', ...new Set(partnerCourses.map((course) => course.country).sort())], [partnerCourses]);
-  const levels = useMemo(() => ['All', ...new Set(partnerCourses.map((course) => course.level).sort())], [partnerCourses]);
+  const countries = useMemo(() => optionList(partnerPdfCountries, partnerCourses.map((course) => course.country)), [partnerCourses]);
+  const levels = useMemo(() => optionList(partnerPdfLevels, partnerCourses.map((course) => course.level)), [partnerCourses]);
   const adminCountries = countries.filter((item) => item !== 'All');
   const subjects = useMemo(() => [...new Set(partnerCourses.map((course) => course.subject).filter(Boolean))].sort().slice(0, 120), [partnerCourses]);
   const catalogStats = useMemo(() => calculateCatalogStats(partnerCourses), [partnerCourses]);
@@ -718,7 +808,7 @@ export function CourseFinder({ onNavigate }) {
   const courseCatalogueMissing = isSupabaseConfigured && partnerCourses.length === 0 && !courseCatalogStatus?.isLoadingFull;
   const loadingFullCatalog = Boolean(courseCatalogStatus?.isLoadingFull);
   const totalCatalogCount = Math.max(courseCatalogStatus?.totalAvailable || 0, partnerCourses.length);
-  const hasMoreCatalogRows = isSupabaseConfigured && totalCatalogCount > partnerCourses.length && !loadingFullCatalog;
+  const availableCountryCount = Math.max(catalogStats.countries, countries.length - 1);
 
   function toggleCompare(courseId) {
     setCompareIds((current) => {
@@ -777,32 +867,13 @@ export function CourseFinder({ onNavigate }) {
     downloadCsv('bizzlo-current-course-catalog.csv', courses, importTemplateColumns);
   }
 
-  async function handleSearchSubmit(event) {
+  function handleSearchSubmit(event) {
     event.preventDefault();
     const nextQuery = searchDraft.trim();
     clearTimeout(searchDebounceRef.current);
     setQuery(nextQuery);
     setPaging({ key: '', limit: 60 });
-    if (!isSupabaseConfigured) return;
-
-    setCatalogSearching(true);
     setApplyError('');
-    try {
-      const rows = await searchCourses?.({
-        country,
-        level,
-        intake: intakeFilter,
-        query: nextQuery,
-        limit: liveSearchPageSize,
-        offset: 0,
-      });
-      setLiveSearchOffset(rows?.length || 0);
-      setLiveSearchHasMore((rows?.length || 0) === liveSearchPageSize);
-    } catch (error) {
-      setApplyError(error?.message || 'Could not search the live course catalogue.');
-    } finally {
-      setCatalogSearching(false);
-    }
   }
 
   function handleClearSearch() {
@@ -837,15 +908,6 @@ export function CourseFinder({ onNavigate }) {
       setApplyError(error?.message || 'Could not load more live course results.');
     } finally {
       setCatalogSearching(false);
-    }
-  }
-
-  async function handleLoadFullCatalog() {
-    setApplyError('');
-    try {
-      await loadFullCourseCatalog?.({ force: true });
-    } catch (error) {
-      setApplyError(error?.message || 'Could not load the full course catalogue.');
     }
   }
 
@@ -922,15 +984,15 @@ export function CourseFinder({ onNavigate }) {
         </div>
         <div>
           <strong>{partnerCourses.length.toLocaleString()}</strong>
-          <span>{loadingFullCatalog ? 'loading searchable rows' : 'searchable rows ready'}</span>
+          <span>{loadingFullCatalog ? 'loading live matches' : 'live matches loaded'}</span>
         </div>
         <div>
           <strong>{filtered.length.toLocaleString()}</strong>
           <span>matching programmes</span>
         </div>
         <div>
-          <strong>{catalogStats.countries}</strong>
-          <span>countries in loaded catalog</span>
+          <strong>{availableCountryCount}</strong>
+          <span>countries available</span>
         </div>
         <div>
           <strong>{commissionCoverage.eligibleCourses.toLocaleString()}</strong>
@@ -944,17 +1006,8 @@ export function CourseFinder({ onNavigate }) {
 
       {loadingFullCatalog ? (
         <div className="system-banner info">
-          Loading the full partner catalogue: {(courseCatalogStatus?.totalLoaded || partnerCourses.length).toLocaleString()}
-          {courseCatalogStatus?.totalAvailable ? ` of ${courseCatalogStatus.totalAvailable.toLocaleString()}` : ''} programmes.
-        </div>
-      ) : null}
-
-      {hasMoreCatalogRows ? (
-        <div className="system-banner">
-          <span>
-            Full catalogue has {totalCatalogCount.toLocaleString()} programmes. Search pulls live matches first, so the page stays quick.
-          </span>
-          <button type="button" onClick={handleLoadFullCatalog}>Load full catalogue</button>
+          Loading live course matches: {(courseCatalogStatus?.totalLoaded || partnerCourses.length).toLocaleString()}
+          {courseCatalogStatus?.totalAvailable ? ` of ${courseCatalogStatus.totalAvailable.toLocaleString()}` : ''} programmes indexed.
         </div>
       ) : null}
 
