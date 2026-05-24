@@ -75,3 +75,12 @@ test('document refresh is targeted for admin review queues', async () => {
   assert.match(source, /refreshDocuments: loadDocuments/);
   assert.match(source, /\.from\('documents'\)[\s\S]*?\.range\(0, 249\)/);
 });
+
+test('document signed-url downloads are not blocked by audit logging', async () => {
+  const source = await readFile(sourcePath, 'utf8');
+  const downloadBlock = source.match(/async function getDocumentDownloadUrl[\s\S]*?async function updateCommission/)?.[0] || '';
+
+  assert.match(downloadBlock, /\.createSignedUrl/);
+  assert.match(downloadBlock, /logAuditEvent\('documents', documentId, 'document_downloaded'[\s\S]*?\.catch\(\(\) => \{\}\)/);
+  assert.doesNotMatch(downloadBlock, /await logAuditEvent\('documents'/);
+});
