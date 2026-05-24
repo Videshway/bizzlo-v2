@@ -45,7 +45,7 @@ test('Course Finder full catalogue loads in pages without shrinking sync data', 
   assert.match(source, /const loadCourseCatalogCount = useCallback/);
   assert.match(source, /async \(options = \{\}\) =>/);
   assert.match(source, /mergeCourseRows\(current, rowsToFlush\)/);
-  assert.match(source, /filters\.append \? mergeCourseRows\(current, mapped\) : mapped/);
+  assert.match(source, /setCourses\(\(current\) => mergeCourseRows\(current, mapped\)\)/);
   assert.match(source, /effectivePageSize = mappedRows\.length/);
 });
 
