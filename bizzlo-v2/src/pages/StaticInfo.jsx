@@ -11,14 +11,20 @@ import {
 import { useAppState } from '../lib/appState';
 import { Badge, EmptyState, Modal, Panel, SelectInput, StatusBadge, TextInput } from '../components/ui';
 
+function triggerDownload(href, filename) {
+  const link = document.createElement('a');
+  link.href = href.startsWith('blob:') ? href : new URL(href, window.location.origin).href;
+  link.download = filename || 'bizzlo-resource';
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 function downloadResource(resource) {
   if (resource.file_url) {
-    const link = document.createElement('a');
-    link.href = resource.file_url;
-    link.download = resource.filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    triggerDownload(resource.file_url, resource.filename);
     return;
   }
 
@@ -33,12 +39,7 @@ function downloadResource(resource) {
   ].join('\n');
   const blob = new Blob([body], { type: 'text/plain' });
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = resource.filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
+  triggerDownload(url, resource.filename);
   window.setTimeout(() => URL.revokeObjectURL(url), 500);
 }
 
@@ -61,12 +62,7 @@ function downloadCountryResource(resource) {
   ].filter(Boolean).join(isPresentation ? '' : '\n');
   const blob = new Blob([body], { type: isPresentation ? 'application/vnd.ms-powerpoint' : 'text/plain' });
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = isPresentation ? resource.filename : resource.filename.replace(/\.pdf$/i, '.txt');
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
+  triggerDownload(url, isPresentation ? resource.filename : resource.filename.replace(/\.pdf$/i, '.txt'));
   window.setTimeout(() => URL.revokeObjectURL(url), 500);
 }
 

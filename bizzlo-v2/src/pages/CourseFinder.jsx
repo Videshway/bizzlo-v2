@@ -590,7 +590,16 @@ function fitTone(score) {
 }
 
 export function CourseFinder({ onNavigate }) {
-  const { addApplication, addCourse, bulkImportCourses, courses, currentUser, searchCourses, visibleStudents } = useAppState();
+  const {
+    addApplication,
+    addCourse,
+    bulkImportCourses,
+    courseCatalogStatus,
+    courses,
+    currentUser,
+    loadFullCourseCatalog,
+    visibleStudents,
+  } = useAppState();
   const showAdminCatalogTools = false;
   const [country, setCountry] = useState('All');
   const [level, setLevel] = useState('All');
@@ -629,6 +638,10 @@ export function CourseFinder({ onNavigate }) {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    loadFullCourseCatalog?.().catch(() => {});
+  }, [loadFullCourseCatalog]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -693,7 +706,8 @@ export function CourseFinder({ onNavigate }) {
   const visibleCourses = sortedFiltered.slice(0, visibleLimit);
   const compareCourses = partnerCourses.filter((course) => compareIds.has(course.id));
   const detailCommissionRule = detailCourse ? getCommissionRuleForCourse(detailCourse) : null;
-  const courseCatalogueMissing = isSupabaseConfigured && partnerCourses.length === 0;
+  const courseCatalogueMissing = isSupabaseConfigured && partnerCourses.length === 0 && !courseCatalogStatus?.isLoadingFull;
+  const loadingFullCatalog = Boolean(courseCatalogStatus?.isLoadingFull);
 
   function toggleCompare(courseId) {
     setCompareIds((current) => {
@@ -755,15 +769,10 @@ export function CourseFinder({ onNavigate }) {
   async function handleSearchSubmit(event) {
     event.preventDefault();
     const nextQuery = searchDraft.trim();
+    clearTimeout(searchDebounceRef.current);
+    setQuery(nextQuery);
     setPaging({ key: '', limit: 60 });
-    await searchCourses({
-      country,
-      level,
-      intake: intakeFilter,
-      query: nextQuery,
-      limit: 100,
-      offset: 0,
-    }).catch(() => {});
+    await loadFullCourseCatalog?.().catch(() => {});
   }
 
   function handleClearSearch() {
@@ -823,7 +832,7 @@ export function CourseFinder({ onNavigate }) {
       <div className="finder-hero">
         <div>
           <strong>{partnerCourses.length.toLocaleString()}</strong>
-          <span>PDF-linked programmes loaded</span>
+          <span>{loadingFullCatalog ? 'loading full PDF catalogue' : 'PDF-linked programmes loaded'}</span>
         </div>
         <div>
           <strong>{filtered.length.toLocaleString()}</strong>
@@ -842,6 +851,13 @@ export function CourseFinder({ onNavigate }) {
           <span>PDF catalogue scope</span>
         </div>
       </div>
+
+      {loadingFullCatalog ? (
+        <div className="system-banner info">
+          Loading the full partner catalogue: {(courseCatalogStatus?.totalLoaded || partnerCourses.length).toLocaleString()}
+          {courseCatalogStatus?.totalAvailable ? ` of ${courseCatalogStatus.totalAvailable.toLocaleString()}` : ''} programmes.
+        </div>
+      ) : null}
 
       <Panel className="finder-panel">
         <div className="finder-controls">
