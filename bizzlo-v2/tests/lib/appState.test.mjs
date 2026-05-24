@@ -49,6 +49,14 @@ test('Course Finder full catalogue loads in pages without shrinking sync data', 
   assert.match(source, /effectivePageSize = mappedRows\.length/);
 });
 
+test('Course Finder initial sync uses balanced live search instead of arbitrary first rows', async () => {
+  const source = await readFile(sourcePath, 'utf8');
+
+  assert.match(source, /supabase\.rpc\('search_courses'/);
+  assert.match(source, /filter_intake: 'September'/);
+  assert.doesNotMatch(source, /from\('courses'\)\.select\('\*'\)\.eq\('is_active', true\)\.limit\(100\)/);
+});
+
 test('new student codes do not reuse the visible student count', async () => {
   const source = await readFile(sourcePath, 'utf8');
 
