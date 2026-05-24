@@ -33,16 +33,18 @@ test('CourseFinder exposes all partner countries without loading every course ro
   assert.match(source, /loadCourseCatalogCount/);
   assert.doesNotMatch(source, /Full catalogue has/);
   assert.doesNotMatch(source, /Load full catalogue/);
+  assert.doesNotMatch(source, /Loading the full partner catalogue/);
   assert.doesNotMatch(source, /useEffect\(\(\) => \{\s*loadFullCourseCatalog\?\.\(\)/);
 });
 
 test('CourseFinder searches live catalog without forcing all rows into the browser', async () => {
   const source = await readFile(courseFinderPath, 'utf8');
-  assert.match(source, /searchCourses\?\.\(\{/);
+  assert.match(source, /searchCoursesRef/);
+  assert.match(source, /runLiveSearch\(\{/);
   assert.match(source, /liveSearchPageSize = 100/);
   assert.match(source, /Load more live results/);
   assert.match(source, /append: true/);
-  assert.match(source, /\[country, intakeFilter, level, query, searchCourses\]/);
+  assert.match(source, /\[country, intakeFilter, level, query\]/);
   assert.match(source, /Apply to selected/);
   assert.match(source, /Choose a student profile before applying/);
 });
