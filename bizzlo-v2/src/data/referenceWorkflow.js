@@ -91,6 +91,7 @@ export const resourceLibrary = [
     summary: 'UK, Ireland, US, Germany, Australia, New Zealand, and Dubai intake/document notes for quick counseling.',
     icon: BookOpenText,
     filename: 'bizzlo-country-desk-guide.pdf',
+    file_url: '/resources/bizzlo-country-desk-guide.pdf',
   },
   {
     title: 'Document Quality Checklist',
@@ -99,6 +100,7 @@ export const resourceLibrary = [
     summary: 'Passport, transcripts, SOP, LOR, CV, IELTS/PTE, bank statement, and visa document acceptance checks.',
     icon: ClipboardCheck,
     filename: 'bizzlo-document-quality-checklist.doc',
+    file_url: '/resources/bizzlo-document-quality-checklist.doc',
   },
   {
     title: 'SOP & LOR Template Bank',
@@ -107,6 +109,7 @@ export const resourceLibrary = [
     summary: 'Editable structure for statement drafts, recommender notes, resume alignment, and university-specific edits.',
     icon: FileText,
     filename: 'bizzlo-sop-lor-template-bank.doc',
+    file_url: '/resources/bizzlo-sop-lor-template-bank.doc',
   },
   {
     title: 'Visa Readiness Deck',
@@ -124,6 +127,7 @@ export const resourceLibrary = [
     summary: 'Manager-facing guide for projected commissions, invoices, deposits, payment proof, and settlement stages.',
     icon: CircleDollarSign,
     filename: 'bizzlo-commission-payments-sop.pdf',
+    file_url: '/resources/bizzlo-commission-payments-sop.pdf',
   },
   {
     title: 'Pre-Departure Support Pack',
@@ -141,6 +145,7 @@ export const resourceLibrary = [
     summary: 'Lead qualification, shortlist presentation, document chasing, offer follow-up, and deposit call scripts.',
     icon: UsersRound,
     filename: 'bizzlo-counselor-call-scripts.doc',
+    file_url: '/resources/bizzlo-counselor-call-scripts.doc',
   },
 ];
 
