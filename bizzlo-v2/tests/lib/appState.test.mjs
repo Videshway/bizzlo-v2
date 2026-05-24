@@ -28,3 +28,19 @@ test('student invite links point to the public portal route', async () => {
   assert.match(source, /\/portal\/\$\{code\}\?token=/);
   assert.match(source, /\.from\('student_invites'\)\.insert/);
 });
+
+test('sign in tries portal username fallback for email identifiers', async () => {
+  const source = await readFile(sourcePath, 'utf8');
+
+  assert.match(source, /function loginEmailCandidatesForIdentifier/);
+  assert.match(source, /portalLoginEmail\(email\.split\('@'\)\[0\]\)/);
+  assert.match(source, /for \(const loginEmail of loginCandidates\)/);
+});
+
+test('Course Finder full catalogue loads in pages without shrinking sync data', async () => {
+  const source = await readFile(sourcePath, 'utf8');
+
+  assert.match(source, /const courseCatalogPageSize = 1000/);
+  assert.match(source, /async \(options = \{\}\) =>/);
+  assert.match(source, /mergeCourseRows\(current, mappedRows\)/);
+});
