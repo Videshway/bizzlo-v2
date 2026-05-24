@@ -56,6 +56,9 @@ const applicationIntakeMonths = [
   'Fall',
   'Winter',
 ];
+const partnerSubmitStatuses = new Set(['profile_incomplete', 'documents_pending', 'admin_changes_requested']);
+const adminReviewStatuses = new Set(['ready_for_admin_review', 'pending_admin_review']);
+const submittedDocumentStatuses = new Set(['uploaded', 'approved']);
 
 function stageIndex(status) {
   const normalizedStatus = applicationStageAliases[status] || status;
@@ -148,7 +151,6 @@ export function Applications() {
     addApplicationNote,
     courses,
     currentUser,
-    partnerEditableStatuses,
     updateApplicationStatus,
     visibleApplicationNotes,
     visibleApplications,
@@ -213,10 +215,23 @@ export function Applications() {
     ? visibleCommissions.find((commission) => commission.application_id === selectedApplication.id)
     : null;
   const completedDocuments = requiredDocuments.filter((type) => documentForType(selectedDocuments, type)?.status === 'approved').length;
+  const submittedDocuments = requiredDocuments.filter((type) => {
+    const document = documentForType(selectedDocuments, type);
+    return submittedDocumentStatuses.has(document?.status);
+  }).length;
   const completion = Math.round((completedDocuments / requiredDocuments.length) * 100);
-  const statusOptions = currentUser.role === 'admin'
-    ? adminStatuses
-    : [...new Set([selectedApplication?.status, ...partnerEditableStatuses])].filter(Boolean);
+  const statusOptions = adminStatuses;
+  const canPartnerSendToAdmin = currentUser.role !== 'admin'
+    && selectedApplication
+    && partnerSubmitStatuses.has(selectedApplication.status);
+  const partnerWaitingForAdmin = currentUser.role !== 'admin'
+    && selectedApplication
+    && adminReviewStatuses.has(selectedApplication.status);
+  const partnerStatusLocked = currentUser.role !== 'admin'
+    && selectedApplication
+    && !canPartnerSendToAdmin
+    && !partnerWaitingForAdmin;
+  const hasSubmittedDocuments = submittedDocuments > 0;
 
   function openApplicationModal(nextFields = {}) {
     const selectedFormStudent = visibleStudents.find((student) => student.id === form.student_id) || visibleStudents[0];
@@ -268,6 +283,11 @@ export function Applications() {
     if (!selectedApplication || !noteBody.trim()) return;
     await addApplicationNote(selectedApplication.id, noteBody.trim());
     setNoteBody('');
+  }
+
+  async function handleSendToAdmin() {
+    if (!selectedApplication || !hasSubmittedDocuments) return;
+    await updateApplicationStatus(selectedApplication.id, 'ready_for_admin_review').catch(() => {});
   }
 
   return (
@@ -379,12 +399,28 @@ export function Applications() {
                   <h2>{selectedStudent?.first_name} {selectedStudent?.last_name}</h2>
                   <p>{selectedStudent?.email} · {selectedStudent?.study_level} · {selectedStudent?.discipline}</p>
                 </div>
-                <label className="field compact-select">
-                  <span>Status</span>
-                  <select value={selectedApplication.status} onChange={(event) => updateApplicationStatus(selectedApplication.id, event.target.value).catch(() => {})}>
-                    {statusOptions.map((status) => <option key={status} value={status}>{labelFor(status)}</option>)}
-                  </select>
-                </label>
+                {currentUser.role === 'admin' ? (
+                  <label className="field compact-select">
+                    <span>Status</span>
+                    <select value={selectedApplication.status} onChange={(event) => updateApplicationStatus(selectedApplication.id, event.target.value).catch(() => {})}>
+                      {statusOptions.map((status) => <option key={status} value={status}>{labelFor(status)}</option>)}
+                    </select>
+                  </label>
+                ) : (
+                  <div className="partner-status-control">
+                    <span>Current stage</span>
+                    <StatusBadge value={selectedApplication.status} />
+                    {canPartnerSendToAdmin ? (
+                      <button className="primary-button" type="button" disabled={!hasSubmittedDocuments} onClick={handleSendToAdmin}>
+                        <Send size={16} />
+                        Send to admin
+                      </button>
+                    ) : null}
+                    {partnerWaitingForAdmin ? <small>Submitted to Videshway admin for decision.</small> : null}
+                    {partnerStatusLocked ? <small>Videshway admin controls the next movement.</small> : null}
+                    {!hasSubmittedDocuments && canPartnerSendToAdmin ? <small>Upload at least one document first.</small> : null}
+                  </div>
+                )}
               </div>
 
               <div className="stage-track">
@@ -419,7 +455,7 @@ export function Applications() {
                   <div className="section-title-row">
                     <div>
                       <strong>Document Requirements</strong>
-                      <span>{completion}% approved for submission</span>
+                      <span>{submittedDocuments}/{requiredDocuments.length} submitted · {completion}% approved</span>
                     </div>
                     <ShieldCheck size={18} />
                   </div>

@@ -33,8 +33,8 @@ export function Dashboard({ onNavigate }) {
           <h1>Admissions command center</h1>
           <p>Every student file, document, application, task, and payout in one controlled workspace.</p>
         </div>
-        <button className="primary-button" type="button" onClick={() => onNavigate('intake')}>
-          Start intake
+        <button className="primary-button" type="button" onClick={() => onNavigate('students')}>
+          Open students
         </button>
       </div>
 
@@ -52,6 +52,7 @@ export function Dashboard({ onNavigate }) {
       <Panel title="Quick Actions" description="Daily partner and Videshway workflows grouped for student files, applications, finance, and support.">
         <div className="action-grid">
           {referenceActions
+            .filter((action) => action.id !== 'resources')
             .filter((action) => currentUser.role !== 'counselor' || action.id !== 'commissions')
             .map((action) => {
               const Icon = action.icon;
