@@ -1,5 +1,4 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-
 import {
   seedApplications,
   seedApplicationNotes,
@@ -22,7 +21,38 @@ const AppStateContext = createContext(null);
 const documentBucket = 'student-documents';
 const courseCatalogPageSize = 2500;
 const courseCatalogUiFlushRows = 2500;
-const courseCatalogMaxRows = 75000;const courseSelectColumns = [  'id',  'catalog_key',  'external_course_id',  'source_name',  'university',  'country',  'city',  'campus',  'level',  'subject',  'course',  'credential',  'duration',  'mode',  'intake',  'tuition',  'application_fee',  'deadline',  'commission_hint',  'eligibility_notes',  'english_requirement',  'academic_requirement',  'scholarship',  'source_url',  'source_updated_at',  'is_verified',  'is_active',  'updated_at',  'created_at',].join(',');
+const courseCatalogMaxRows = 75000;
+const courseSelectColumns = [
+  'id',
+  'catalog_key',
+  'external_course_id',
+  'source_name',
+  'university',
+  'country',
+  'city',
+  'campus',
+  'level',
+  'subject',
+  'course',
+  'credential',
+  'duration',
+  'mode',
+  'intake',
+  'tuition',
+  'application_fee',
+  'deadline',
+  'commission_hint',
+  'eligibility_notes',
+  'english_requirement',
+  'academic_requirement',
+  'scholarship',
+  'source_url',
+  'source_updated_at',
+  'is_verified',
+  'is_active',
+  'updated_at',
+  'created_at',
+].join(',');
 const partnerEditableStatuses = new Set([
   'profile_incomplete',
   'documents_pending',
@@ -92,7 +122,57 @@ function mapCourse(course) {
   };
 }
 
-function courseFilterValue(value) { const normalized = normalizeCourseValue(value); return !normalized || normalized === 'All' ? '' : normalized; } function safePostgrestSearch(value) { return normalizeCourseValue(value).replace(/[%*_(),]/g, ' ').replace(/\s+/g, ' ').trim(); } function buildCourseCatalogQuery(filters = {}, selectOptions) { const limit = Math.min(Math.max(Number(filters.limit) || 100, 1), 500); const offset = Math.max(Number(filters.offset) || 0, 0); const country = courseFilterValue(filters.country); const level = courseFilterValue(filters.level); const intake = courseFilterValue(filters.intake); const queryText = safePostgrestSearch(filters.query); let request = supabase.from('courses').select(courseSelectColumns, selectOptions).eq('is_active', true); if (country) request = request.eq('country', country); if (level) request = request.eq('level', level); if (intake) request = request.ilike('intake', `%${intake}%`); if (queryText) { const pattern = `%${queryText}%`; request = request.or([`university.ilike.${pattern}`, `course.ilike.${pattern}`, `subject.ilike.${pattern}`, `city.ilike.${pattern}`, `country.ilike.${pattern}`].join(',')); } return request.order('country', { ascending: true }).order('university', { ascending: true }).order('course', { ascending: true }).range(offset, offset + limit - 1); } async function fetchCourseCatalogPage(filters = {}) { return buildCourseCatalogQuery(filters); } function normalizeCourseValue(value) {
+function courseFilterValue(value) {
+  const normalized = normalizeCourseValue(value);
+  return !normalized || normalized === 'All' ? '' : normalized;
+}
+
+function safePostgrestSearch(value) {
+  return normalizeCourseValue(value)
+    .replace(/[%*_(),]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildCourseCatalogQuery(filters = {}, selectOptions) {
+  const limit = Math.min(Math.max(Number(filters.limit) || 100, 1), 500);
+  const offset = Math.max(Number(filters.offset) || 0, 0);
+  const country = courseFilterValue(filters.country);
+  const level = courseFilterValue(filters.level);
+  const intake = courseFilterValue(filters.intake);
+  const queryText = safePostgrestSearch(filters.query);
+
+  let request = supabase
+    .from('courses')
+    .select(courseSelectColumns, selectOptions)
+    .eq('is_active', true);
+
+  if (country) request = request.eq('country', country);
+  if (level) request = request.eq('level', level);
+  if (intake) request = request.ilike('intake', `%${intake}%`);
+  if (queryText) {
+    const pattern = `%${queryText}%`;
+    request = request.or([
+      `university.ilike.${pattern}`,
+      `course.ilike.${pattern}`,
+      `subject.ilike.${pattern}`,
+      `city.ilike.${pattern}`,
+      `country.ilike.${pattern}`,
+    ].join(','));
+  }
+
+  return request
+    .order('country', { ascending: true })
+    .order('university', { ascending: true })
+    .order('course', { ascending: true })
+    .range(offset, offset + limit - 1);
+}
+
+async function fetchCourseCatalogPage(filters = {}) {
+  return buildCourseCatalogQuery(filters);
+}
+
+function normalizeCourseValue(value) {
   return String(value || '').trim().replace(/\s+/g, ' ');
 }
 
@@ -494,8 +574,7 @@ export function AppStateProvider({ children }) {
       let effectivePageSize = courseCatalogPageSize;
 
       while (offset < courseCatalogMaxRows) {
-                // Course catalog pages avoid exact counts to stay under statement timeouts.
-        const { data, error, count } = await supabase
+        const { data, error } = await supabase
           .from('courses')
           .select(courseSelectColumns)
           .eq('is_active', true)
@@ -505,7 +584,6 @@ export function AppStateProvider({ children }) {
         if (error) throw error;
 
         const mappedRows = (data || []).map(mapCourse);
-        // Full catalog total is updated after each page to avoid slow exact counts.
         if (!mappedRows.length) break;
 
         if (mappedRows.length < effectivePageSize && totalAvailable > mappedRows.length && offset === 0) {
@@ -663,14 +741,7 @@ export function AppStateProvider({ children }) {
           .order('created_at', { ascending: false })
           .range(0, 199),
         supabase.from('documents').select('*').order('created_at', { ascending: false }).range(0, 249),
-        fetchCourseCatalogPage({
-          country: 'All',
-          level: 'All',
-          intake: 'September',
-          query: '',
-          limit: 100,
-          offset: 0,
-        }),
+        Promise.resolve({ data: [], error: null }),
         supabase.from('tasks').select('*').order('status', { ascending: true }).order('due_date', { ascending: true }).range(0, 99),
         isCounselorProfile
           ? Promise.resolve({ data: [], error: null })
@@ -1590,14 +1661,7 @@ export function AppStateProvider({ children }) {
       return rows;
     }
 
-    const { data, error } = await fetchCourseCatalogPage({
-      country: filters.country || 'All',
-      level: filters.level || 'All',
-      intake: filters.intake || 'All',
-      query: filters.query || '',
-      limit: filters.limit || 100,
-      offset: filters.offset || 0,
-    });
+    const { data, error } = await fetchCourseCatalogPage(filters);
     if (error) {
       setAppError(error.message);
       throw error;
