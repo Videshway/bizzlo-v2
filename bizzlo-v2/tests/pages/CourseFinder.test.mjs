@@ -5,6 +5,7 @@ import { seedCourses } from '../../src/data/seed.js';
 
 const courseFinderPath = new URL('../../src/pages/CourseFinder.jsx', import.meta.url);
 const applicationsPath = new URL('../../src/pages/Applications.jsx', import.meta.url);
+const documentsPath = new URL('../../src/pages/Documents.jsx', import.meta.url);
 
 test('CourseFinder shows the production empty catalogue state', async () => {
   const source = await readFile(courseFinderPath, 'utf8');
@@ -52,4 +53,13 @@ test('Applications new application modal supports typed student lookup', async (
   assert.match(source, /findStudentFromInput/);
   assert.match(source, /Type student name, email, or code/);
   assert.doesNotMatch(source, /value=\{form\.student_id \|\| visibleStudents\[0\]\?\.id \|\| ''\}/);
+});
+
+test('Documents page refreshes admin queue and surfaces download errors', async () => {
+  const source = await readFile(documentsPath, 'utf8');
+
+  assert.match(source, /refreshDocuments/);
+  assert.match(source, /useEffect\(\(\) => \{\s*refreshDocuments\?\.\(\)\.catch/);
+  assert.match(source, /setDownloadError/);
+  assert.doesNotMatch(source, /handleDownload\(documentRow\.id\)\.catch\(\(\) => \{\}\)/);
 });
