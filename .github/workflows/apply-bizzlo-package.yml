@@ -36,7 +36,7 @@ jobs:
           cp /tmp/bizzlo-package/README.md README.md
           rm -f bizzlo-v2/vercel.json
           git rm -f "$PACKAGE"
-          git add -A bizzlo-v2 vercel.json .vercelignore README.md .deploy
+          git add -A bizzlo-v2 vercel.json .vercelignore README.md
           git status --short
 
       - name: Commit applied package
