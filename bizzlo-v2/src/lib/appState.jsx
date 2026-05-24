@@ -136,6 +136,20 @@ function validateInitialPassword(password) {
   }
 }
 
+function makeStudentCode(existingStudents = []) {
+  const year = new Date().getFullYear();
+  const existingCodes = new Set(existingStudents.map((student) => student.student_code).filter(Boolean));
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const timePart = Date.now().toString(36).toUpperCase().slice(-6);
+    const randomPart = Math.random().toString(36).slice(2, 6).toUpperCase();
+    const candidate = `BZ-${year}-${timePart}${randomPart}`;
+    if (!existingCodes.has(candidate)) return candidate;
+  }
+
+  return `BZ-${year}-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
+}
+
 function courseIdentityKey(course) {
   if (course.catalog_key) return normalizeCourseValue(course.catalog_key).toLowerCase();
   if (course.external_course_id) {
@@ -537,6 +551,38 @@ export function AppStateProvider({ children }) {
       fullCatalogLoadRef.current = null;
     }
   }, []);
+
+  const loadCourseCatalogCount = useCallback(async () => {
+    if (!isSupabaseConfigured) {
+      setCourseCatalogStatus((current) => ({
+        ...current,
+        totalLoaded: seedCourses.length,
+        totalAvailable: seedCourses.length,
+      }));
+      return seedCourses.length;
+    }
+
+    const { count, error } = await supabase
+      .from('courses')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_active', true);
+
+    if (error) {
+      setCourseCatalogStatus((current) => ({
+        ...current,
+        lastError: errorMessage(error),
+      }));
+      throw error;
+    }
+
+    setCourseCatalogStatus((current) => ({
+      ...current,
+      totalLoaded: Math.max(current.totalLoaded || 0, courses.length),
+      totalAvailable: count || 0,
+      lastError: '',
+    }));
+    return count || 0;
+  }, [courses.length]);
 
   const loadData = useCallback(async (profile) => {
     if (!isSupabaseConfigured || !profile) return;
@@ -945,7 +991,7 @@ export function AppStateProvider({ children }) {
     if (!isSupabaseConfigured) {
       const nextStudent = {
         id: `stu-${Date.now()}`,
-        student_code: `BZ-${new Date().getFullYear()}-${String(students.length + 1).padStart(3, '0')}`,
+        student_code: makeStudentCode(students),
         profile_score: 38,
         status: 'profile_incomplete',
         manager_id: managerId || 'u-manager',
@@ -962,7 +1008,7 @@ export function AppStateProvider({ children }) {
       organization_id: organizationId,
       manager_id: managerId,
       counselor_id: counselorId,
-      student_code: `BZ-${new Date().getFullYear()}-${String(students.length + 1).padStart(4, '0')}`,
+      student_code: makeStudentCode(students),
       first_name: student.first_name,
       last_name: student.last_name,
       email: student.email,
@@ -976,7 +1022,19 @@ export function AppStateProvider({ children }) {
       status: 'profile_incomplete',
     };
 
-    const { data, error } = await supabase.from('students').insert(payload).select('*').single();
+    let data = null;
+    let error = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const result = await supabase.from('students').insert(payload).select('*').single();
+      data = result.data;
+      error = result.error;
+      if (!error) break;
+      if (error.code === '23505' && String(error.message || '').includes('students_student_code_key')) {
+        payload.student_code = makeStudentCode([...students, payload]);
+        continue;
+      }
+      break;
+    }
     if (error) {
       setAppError(error.message);
       throw error;
@@ -1452,6 +1510,12 @@ export function AppStateProvider({ children }) {
     }
     const mapped = (data || []).map(mapCourse);
     setCourses(mapped);
+    setCourseCatalogStatus((current) => ({
+      ...current,
+      totalLoaded: mapped.length,
+      totalAvailable: Math.max(current.totalAvailable || 0, mapped.length),
+      lastError: '',
+    }));
     return mapped;
   }
 
@@ -2231,6 +2295,7 @@ export function AppStateProvider({ children }) {
     bulkImportCourses,
     searchCourses,
     loadCatalogCountry,
+    loadCourseCatalogCount,
     loadFullCourseCatalog,
     updateApplicationStatus,
     addDocument,
