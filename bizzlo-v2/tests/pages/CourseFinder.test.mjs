@@ -34,7 +34,9 @@ test('CourseFinder loads the full catalog outside dashboard sync', async () => {
 test('CourseFinder searches live catalog without forcing all rows into the browser', async () => {
   const source = await readFile(courseFinderPath, 'utf8');
   assert.match(source, /await searchCourses\?\.\(\{/);
-  assert.match(source, /limit: 100/);
+  assert.match(source, /liveSearchPageSize = 100/);
+  assert.match(source, /Load more live results/);
+  assert.match(source, /append: true/);
   assert.match(source, /Apply to selected/);
   assert.match(source, /Choose a student profile before applying/);
 });
