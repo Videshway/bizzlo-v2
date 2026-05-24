@@ -18,6 +18,8 @@ import { captureEvent } from './telemetry';
 
 const AppStateContext = createContext(null);
 const documentBucket = 'student-documents';
+const courseCatalogPageSize = 1000;
+const courseCatalogMaxRows = 75000;
 const partnerEditableStatuses = new Set([
   'profile_incomplete',
   'documents_pending',
@@ -114,10 +116,17 @@ function portalLoginEmail(username) {
   return `${normalizePortalUsername(username)}@portal.bizzlo.co`;
 }
 
-function loginEmailForIdentifier(identifier) {
+function loginEmailCandidatesForIdentifier(identifier) {
   const value = String(identifier || '').trim();
-  if (value.includes('@')) return value.toLowerCase();
-  return portalLoginEmail(value);
+  if (!value) return [''];
+  if (!value.includes('@')) return [portalLoginEmail(value)];
+  const email = value.toLowerCase();
+  const usernameFallback = portalLoginEmail(email.split('@')[0]);
+  return Array.from(new Set([email, usernameFallback].filter(Boolean)));
+}
+
+function loginEmailForIdentifier(identifier) {
+  return loginEmailCandidatesForIdentifier(identifier)[0];
 }
 
 function validateInitialPassword(password) {
@@ -219,6 +228,25 @@ function coursePayload(course) {
 
 function isPartnerCatalogCourse(course) {
   return Boolean(course.partner_university_id) || /partner/i.test(course.source_name || '');
+}
+
+function mergeCourseRows(currentRows, incomingRows) {
+  const byKey = new Map();
+  const merged = [];
+
+  [...currentRows, ...incomingRows].forEach((course) => {
+    const key = course.catalog_key || courseIdentityKey(course);
+    if (!key) return;
+    if (byKey.has(key)) {
+      const index = byKey.get(key);
+      merged[index] = { ...merged[index], ...course };
+      return;
+    }
+    byKey.set(key, merged.length);
+    merged.push(course);
+  });
+
+  return merged;
 }
 
 function chunkRows(rows, size) {
@@ -349,6 +377,13 @@ export function AppStateProvider({ children }) {
   const [applicationNotes, setApplicationNotes] = useState(seedApplicationNotes);
   const [documents, setDocuments] = useState(seedDocuments);
   const [courses, setCourses] = useState(seedCourses);
+  const [courseCatalogStatus, setCourseCatalogStatus] = useState(() => ({
+    isLoadingFull: false,
+    isFullCatalogLoaded: !isSupabaseConfigured,
+    totalLoaded: seedCourses.length,
+    totalAvailable: seedCourses.length,
+    lastError: '',
+  }));
   const [loadedCatalogCountries, setLoadedCatalogCountries] = useState(new Set());
   const [catalogLoadingCountry, setCatalogLoadingCountry] = useState('');
   const [tasks, setTasks] = useState(seedTasks);
@@ -361,6 +396,8 @@ export function AppStateProvider({ children }) {
   const [completedTrainingModules, setCompletedTrainingModules] = useState([]);
   const [activeInviteStudentId, setActiveInviteStudentId] = useState('');
   const [activeInviteUrl, setActiveInviteUrl] = useState('');
+  const fullCatalogLoadRef = useRef(null);
+  const fullCatalogLoadedRef = useRef(!isSupabaseConfigured);
 
   useEffect(() => {
     if (!isDemoMode) return undefined;
@@ -395,6 +432,86 @@ export function AppStateProvider({ children }) {
     }
     setCatalogLoadingCountry('');
   }, [isDemoMode, loadedCatalogCountries]);
+
+  const loadFullCourseCatalog = useCallback(async (options = {}) => {
+    if (!isSupabaseConfigured) {
+      fullCatalogLoadedRef.current = true;
+      setCourseCatalogStatus({
+        isLoadingFull: false,
+        isFullCatalogLoaded: true,
+        totalLoaded: seedCourses.length,
+        totalAvailable: seedCourses.length,
+        lastError: '',
+      });
+      return seedCourses;
+    }
+
+    if (fullCatalogLoadRef.current && !options.force) return fullCatalogLoadRef.current;
+    if (fullCatalogLoadedRef.current && !options.force) return [];
+
+    const promise = (async () => {
+      setCourseCatalogStatus((current) => ({
+        ...current,
+        isLoadingFull: true,
+        lastError: '',
+      }));
+
+      const loadedRows = [];
+      let totalAvailable = 0;
+
+      for (let offset = 0; offset < courseCatalogMaxRows; offset += courseCatalogPageSize) {
+        const selectOptions = offset === 0 ? { count: 'exact' } : undefined;
+        const { data, error, count } = await supabase
+          .from('courses')
+          .select('*', selectOptions)
+          .eq('is_active', true)
+          .order('country', { ascending: true })
+          .order('university', { ascending: true })
+          .order('course', { ascending: true })
+          .range(offset, offset + courseCatalogPageSize - 1);
+
+        if (error) throw error;
+
+        const mappedRows = (data || []).map(mapCourse);
+        if (offset === 0) totalAvailable = count || mappedRows.length;
+        loadedRows.push(...mappedRows);
+        setCourses((current) => mergeCourseRows(current, mappedRows));
+        setCourseCatalogStatus((current) => ({
+          ...current,
+          totalLoaded: loadedRows.length,
+          totalAvailable: Math.max(totalAvailable, loadedRows.length),
+        }));
+
+        if (mappedRows.length < courseCatalogPageSize) break;
+        if (totalAvailable && loadedRows.length >= totalAvailable) break;
+      }
+
+      setCourseCatalogStatus({
+        isLoadingFull: false,
+        isFullCatalogLoaded: true,
+        totalLoaded: loadedRows.length,
+        totalAvailable: Math.max(totalAvailable, loadedRows.length),
+        lastError: '',
+      });
+      fullCatalogLoadedRef.current = true;
+      return loadedRows;
+    })();
+
+    fullCatalogLoadRef.current = promise;
+    try {
+      return await promise;
+    } catch (error) {
+      setCourseCatalogStatus((current) => ({
+        ...current,
+        isLoadingFull: false,
+        lastError: errorMessage(error),
+      }));
+      fullCatalogLoadedRef.current = false;
+      throw error;
+    } finally {
+      fullCatalogLoadRef.current = null;
+    }
+  }, []);
 
   const loadData = useCallback(async (profile) => {
     if (!isSupabaseConfigured || !profile) return;
@@ -507,7 +624,17 @@ export function AppStateProvider({ children }) {
       setApplicationNotes((applicationEventsResult.data || []).map(mapApplicationNote));
       setDocuments((documentsResult.data || []).map(mapDocument));
       const databaseCourses = (coursesResult.data || []).map(mapCourse);
-      setCourses(databaseCourses.length ? databaseCourses : []);
+      setCourses((current) => {
+        if (!databaseCourses.length) return [];
+        return current.length > databaseCourses.length
+          ? mergeCourseRows(current, databaseCourses)
+          : databaseCourses;
+      });
+      setCourseCatalogStatus((current) => ({
+        ...current,
+        totalLoaded: Math.max(current.totalLoaded, databaseCourses.length),
+        totalAvailable: Math.max(current.totalAvailable, databaseCourses.length),
+      }));
       setTasks((tasksResult.data || []).map((task) => mapTask(task, mappedUsers)));
       setCommissions((commissionsResult.data || []).map(mapCommission));
       setPartnerFinanceProfiles(financeProfilesResult.data || []);
@@ -545,6 +672,15 @@ export function AppStateProvider({ children }) {
         setApplications([]);
         setApplicationNotes([]);
         setDocuments([]);
+        setCourses([]);
+        fullCatalogLoadedRef.current = false;
+        setCourseCatalogStatus({
+          isLoadingFull: false,
+          isFullCatalogLoaded: false,
+          totalLoaded: 0,
+          totalAvailable: 0,
+          lastError: '',
+        });
         setTasks([]);
         setCommissions([]);
         setPartnerFinanceProfiles([]);
@@ -659,20 +795,27 @@ export function AppStateProvider({ children }) {
 
     setAuthLoading(true);
     setAppError('');
-    const loginEmail = loginEmailForIdentifier(email);
-    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
-    if (error) {
-      setAuthLoading(false);
-      setAppError(error.message);
-      throw error;
+    const loginCandidates = loginEmailCandidatesForIdentifier(email);
+    let lastError = null;
+
+    for (const loginEmail of loginCandidates) {
+      const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
+      if (!error) {
+        await supabase.rpc('log_audit_event', {
+          entity_type: 'auth',
+          entity_id: null,
+          action: 'sign_in',
+          metadata: { login_identifier: email, login_email: loginEmail },
+        }).catch(() => {});
+        captureEvent('sign_in', {}, currentUser);
+        return;
+      }
+      lastError = error;
     }
-    await supabase.rpc('log_audit_event', {
-      entity_type: 'auth',
-      entity_id: null,
-      action: 'sign_in',
-      metadata: { login_identifier: email },
-    }).catch(() => {});
-    captureEvent('sign_in', {}, currentUser);
+
+    setAuthLoading(false);
+    setAppError(lastError?.message || 'Invalid login credentials');
+    throw lastError || new Error('Invalid login credentials');
   }
 
   async function signOut() {
@@ -2030,6 +2173,7 @@ export function AppStateProvider({ children }) {
     documents: visibleDocuments,
     visibleDocuments,
     courses,
+    courseCatalogStatus,
     catalogLoadingCountry,
     tasks,
     visibleTasks,
@@ -2062,6 +2206,7 @@ export function AppStateProvider({ children }) {
     bulkImportCourses,
     searchCourses,
     loadCatalogCountry,
+    loadFullCourseCatalog,
     updateApplicationStatus,
     addDocument,
     updateDocumentStatus,
@@ -2086,6 +2231,7 @@ export function AppStateProvider({ children }) {
     completedTrainingModules,
     counselors,
     commissions,
+    courseCatalogStatus,
     courses,
     currentUser,
     dataLoading,
