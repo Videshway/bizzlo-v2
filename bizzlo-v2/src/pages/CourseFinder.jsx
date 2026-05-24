@@ -597,7 +597,9 @@ export function CourseFinder({ onNavigate }) {
     courseCatalogStatus,
     courses,
     currentUser,
+    loadCourseCatalogCount,
     loadFullCourseCatalog,
+    searchCourses,
     visibleStudents,
   } = useAppState();
   const showAdminCatalogTools = false;
@@ -627,6 +629,9 @@ export function CourseFinder({ onNavigate }) {
   const [importResult, setImportResult] = useState(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [ruleCount, setRuleCount] = useState(0);
+  const [catalogSearching, setCatalogSearching] = useState(false);
+  const [applyError, setApplyError] = useState('');
+  const [applySuccess, setApplySuccess] = useState('');
   const searchDebounceRef = useRef(null);
 
   useEffect(() => {
@@ -640,8 +645,8 @@ export function CourseFinder({ onNavigate }) {
   }, []);
 
   useEffect(() => {
-    loadFullCourseCatalog?.().catch(() => {});
-  }, [loadFullCourseCatalog]);
+    loadCourseCatalogCount?.().catch(() => {});
+  }, [loadCourseCatalogCount]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -708,6 +713,8 @@ export function CourseFinder({ onNavigate }) {
   const detailCommissionRule = detailCourse ? getCommissionRuleForCourse(detailCourse) : null;
   const courseCatalogueMissing = isSupabaseConfigured && partnerCourses.length === 0 && !courseCatalogStatus?.isLoadingFull;
   const loadingFullCatalog = Boolean(courseCatalogStatus?.isLoadingFull);
+  const totalCatalogCount = Math.max(courseCatalogStatus?.totalAvailable || 0, partnerCourses.length);
+  const hasMoreCatalogRows = isSupabaseConfigured && totalCatalogCount > partnerCourses.length && !loadingFullCatalog;
 
   function toggleCompare(courseId) {
     setCompareIds((current) => {
@@ -772,7 +779,24 @@ export function CourseFinder({ onNavigate }) {
     clearTimeout(searchDebounceRef.current);
     setQuery(nextQuery);
     setPaging({ key: '', limit: 60 });
-    await loadFullCourseCatalog?.().catch(() => {});
+    if (!isSupabaseConfigured) return;
+
+    setCatalogSearching(true);
+    setApplyError('');
+    try {
+      await searchCourses?.({
+        country,
+        level,
+        intake: intakeFilter,
+        query: nextQuery,
+        limit: 100,
+        offset: 0,
+      });
+    } catch (error) {
+      setApplyError(error?.message || 'Could not search the live course catalogue.');
+    } finally {
+      setCatalogSearching(false);
+    }
   }
 
   function handleClearSearch() {
@@ -780,27 +804,53 @@ export function CourseFinder({ onNavigate }) {
     setSearchDraft('');
     setQuery('');
     setPaging({ key: '', limit: 60 });
+    setApplyError('');
+  }
+
+  async function handleLoadFullCatalog() {
+    setApplyError('');
+    try {
+      await loadFullCourseCatalog?.({ force: true });
+    } catch (error) {
+      setApplyError(error?.message || 'Could not load the full course catalogue.');
+    }
   }
 
   async function handleApply(course) {
+    setApplyError('');
+    setApplySuccess('');
     if (!selectedStudent) {
-      onNavigate('students');
+      setApplyError('Choose a student profile before applying to a course.');
       return;
     }
 
-    await addApplication({
-      student_id: selectedStudent.id,
-      course_id: course.id,
-      university: course.university,
-      country: course.country,
-      course: course.course,
-      intake: course.intake,
-    });
-    onNavigate('applications');
+    try {
+      await addApplication({
+        student_id: selectedStudent.id,
+        course_id: course.id,
+        university: course.university,
+        country: course.country,
+        course: course.course,
+        intake: course.intake,
+      });
+      setApplySuccess(`Application created for ${selectedStudent.first_name} ${selectedStudent.last_name}.`);
+      onNavigate('applications');
+    } catch (error) {
+      setApplyError(error?.message || 'Could not create this application.');
+    }
   }
 
   async function handleMultiApply() {
-    if (!selectedStudent || !compareCourses.length) return;
+    setApplyError('');
+    setApplySuccess('');
+    if (!selectedStudent) {
+      setApplyError('Choose a student profile before applying to selected courses.');
+      return;
+    }
+    if (!compareCourses.length) {
+      setApplyError('Select at least one course before using Apply to selected.');
+      return;
+    }
     setSubmitting(true);
     try {
       for (const course of compareCourses.slice(0, 8)) {
@@ -814,7 +864,10 @@ export function CourseFinder({ onNavigate }) {
         });
       }
       setCompareIds(new Set());
+      setApplySuccess(`Created ${Math.min(compareCourses.length, 8)} application${compareCourses.length === 1 ? '' : 's'} for ${selectedStudent.first_name} ${selectedStudent.last_name}.`);
       onNavigate('applications');
+    } catch (error) {
+      setApplyError(error?.message || 'Could not create selected applications.');
     } finally {
       setSubmitting(false);
     }
@@ -831,8 +884,12 @@ export function CourseFinder({ onNavigate }) {
 
       <div className="finder-hero">
         <div>
+          <strong>{totalCatalogCount.toLocaleString()}</strong>
+          <span>programmes in full catalogue</span>
+        </div>
+        <div>
           <strong>{partnerCourses.length.toLocaleString()}</strong>
-          <span>{loadingFullCatalog ? 'loading full PDF catalogue' : 'PDF-linked programmes loaded'}</span>
+          <span>{loadingFullCatalog ? 'loading searchable rows' : 'searchable rows ready'}</span>
         </div>
         <div>
           <strong>{filtered.length.toLocaleString()}</strong>
@@ -859,6 +916,18 @@ export function CourseFinder({ onNavigate }) {
         </div>
       ) : null}
 
+      {hasMoreCatalogRows ? (
+        <div className="system-banner">
+          <span>
+            Full catalogue has {totalCatalogCount.toLocaleString()} programmes. Search pulls live matches first, so the page stays quick.
+          </span>
+          <button type="button" onClick={handleLoadFullCatalog}>Load full catalogue</button>
+        </div>
+      ) : null}
+
+      {applyError ? <div className="system-banner error">{applyError}</div> : null}
+      {applySuccess ? <div className="system-banner success">{applySuccess}</div> : null}
+
       <Panel className="finder-panel">
         <div className="finder-controls">
           <form className="finder-search-row" onSubmit={handleSearchSubmit}>
@@ -866,9 +935,9 @@ export function CourseFinder({ onNavigate }) {
               <Filter size={17} />
               <input placeholder="Search course, university, city, subject..." value={searchDraft} onChange={(event) => setSearchDraft(event.target.value)} />
             </div>
-            <button className="primary-button" type="submit">
+            <button className="primary-button" type="submit" disabled={catalogSearching}>
               <Search size={15} />
-              Search
+              {catalogSearching ? 'Searching...' : 'Search'}
             </button>
             <button className="secondary-button" type="button" onClick={handleClearSearch}>
               Clear
@@ -909,11 +978,13 @@ export function CourseFinder({ onNavigate }) {
           <SelectInput label="Student state" value={studentState} onChange={(event) => setStudentState(event.target.value)}>
             {studentStates.map((item) => <option key={item}>{item}</option>)}
           </SelectInput>
-          {currentUser.role !== 'admin' ? (
-            <SelectInput label="Student profile" value={selectedStudent?.id || ''} onChange={(event) => setSelectedStudentId(event.target.value)}>
-              {visibleStudents.map((student) => <option key={student.id} value={student.id}>{student.first_name} {student.last_name}</option>)}
-            </SelectInput>
-          ) : null}
+          <SelectInput label="Student profile" value={selectedStudent?.id || ''} onChange={(event) => setSelectedStudentId(event.target.value)}>
+            {visibleStudents.length ? (
+              visibleStudents.map((student) => <option key={student.id} value={student.id}>{student.first_name} {student.last_name}</option>)
+            ) : (
+              <option value="">Create a student first</option>
+            )}
+          </SelectInput>
         </div>
         <div className="country-tabs">
           {countries.slice(0, 10).map((item) => (
@@ -1001,9 +1072,9 @@ export function CourseFinder({ onNavigate }) {
                     <Info size={15} />
                     Details
                   </button>
-                  <button className="primary-button" type="button" disabled={currentUser.role === 'admin'} onClick={() => handleApply(course).catch(() => {})}>
+                  <button className="primary-button" type="button" onClick={() => handleApply(course)}>
                     <BookmarkPlus size={15} />
-                    {currentUser.role === 'admin' ? 'Catalogued' : 'Apply'}
+                    Apply
                   </button>
                 </div>
               </article>
@@ -1086,9 +1157,9 @@ export function CourseFinder({ onNavigate }) {
                         <Info size={15} />
                         Details
                       </button>
-                      <button className="row-icon-button" type="button" disabled={currentUser.role === 'admin'} onClick={() => handleApply(course).catch(() => {})}>
+                      <button className="row-icon-button" type="button" onClick={() => handleApply(course)}>
                         <BookmarkPlus size={15} />
-                        {currentUser.role === 'admin' ? 'Catalogued' : 'Apply'}
+                        Apply
                       </button>
                     </td>
                   </tr>
@@ -1112,8 +1183,8 @@ export function CourseFinder({ onNavigate }) {
         <Panel
           title={`Compare ${compareCourses.length} Programmes`}
           description="Keep the shortlist tight, then create applications for the selected student."
-          action={currentUser.role === 'admin' ? null : (
-            <button className="primary-button" type="button" disabled={submitting} onClick={() => handleMultiApply().catch(() => {})}>
+          action={(
+            <button className="primary-button" type="button" disabled={submitting} onClick={() => handleMultiApply()}>
               {submitting ? 'Creating...' : 'Apply to selected'}
             </button>
           )}
@@ -1197,7 +1268,7 @@ export function CourseFinder({ onNavigate }) {
                 <Download size={15} />
                 Download
               </button>
-              <button className="primary-button" type="button" disabled={currentUser.role === 'admin'} onClick={() => handleApply(detailCourse).catch(() => {})}>
+              <button className="primary-button" type="button" onClick={() => handleApply(detailCourse)}>
                 <BookmarkPlus size={15} />
                 Apply for student
               </button>
