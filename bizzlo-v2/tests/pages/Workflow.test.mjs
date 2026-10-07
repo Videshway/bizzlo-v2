@@ -8,12 +8,12 @@ const dashboardPath = new URL('../../src/pages/Dashboard.jsx', import.meta.url);
 const appStatePath = new URL('../../src/lib/appState.jsx', import.meta.url);
 const migration13Path = new URL('../../supabase/migrations/013_partner_status_handoff.sql', import.meta.url);
 
-test('launch menu keeps Support and hides non-core sections', async () => {
+test('workspace menu includes Tasks and Support while hiding non-core sections', async () => {
   const source = await readFile(shellPath, 'utf8');
 
   assert.match(source, /label: 'Support'/);
   assert.doesNotMatch(source, /label: '360 Solutions'/);
-  assert.doesNotMatch(source, /label: 'Tasks'/);
+  assert.match(source, /label: 'Tasks'/);
   assert.doesNotMatch(source, /label: 'Intake'/);
 });
 

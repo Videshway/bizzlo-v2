@@ -23,6 +23,7 @@ export class ErrorBoundary extends React.Component {
             <div className="auth-heading">
               <h1>Bizzlo hit a temporary issue</h1>
               <p>Please refresh the page. If it continues, contact support@bizzlo.co.</p>
+              <button className="primary-button" type="button" onClick={() => window.location.reload()}>Refresh page</button>
             </div>
           </section>
         </main>
@@ -32,4 +33,3 @@ export class ErrorBoundary extends React.Component {
     return this.props.children;
   }
 }
-

@@ -3,9 +3,10 @@ import { CheckCircle2, Download, MessageSquarePlus, Plus, Send, ShieldCheck } fr
 import { intakeOptions } from '../data/formOptions';
 import { applicationStageAliases, applicationStages, requiredDocuments } from '../data/referenceWorkflow';
 import { useAppState } from '../lib/appState';
+import { summarizeCommissions } from '../lib/dashboardInsights';
 import { labelFor, money } from '../lib/status';
 import { isAdminRole } from '../lib/roles';
-import { Badge, Modal, Panel, SelectInput, StatusBadge, TextInput } from '../components/ui';
+import { Badge, EmptyState, Modal, Panel, SelectInput, StatusBadge, TextInput } from '../components/ui';
 
 const adminStatuses = [
   'profile_incomplete',
@@ -25,18 +26,6 @@ const adminStatuses = [
   'visa_granted',
   'enrolled',
   'rejected',
-];
-
-const deadlineTypes = [
-  'All',
-  'Application Deadline',
-  'Payment Deadline',
-  'CAS Request Deadline',
-  'Enrollment Deadline',
-  'GS Submission Deadline',
-  'Visa Received Deadline',
-  'Course Start Date',
-  'Offer Acceptance Deadline',
 ];
 
 const applicationIntakeMonths = [
@@ -72,7 +61,10 @@ function isRejectedOutcome(status) {
 }
 
 function documentForType(documents, type) {
-  return documents.find((document) => document.type === type);
+  return documents.filter((document) => document.type === type).sort((left, right) => (
+    Number(Boolean(right.application_id)) - Number(Boolean(left.application_id))
+    || (Date.parse(right.created_at || right.uploaded_at) || 0) - (Date.parse(left.created_at || left.uploaded_at) || 0)
+  ))[0];
 }
 
 function intakeMonth(value) {
@@ -83,18 +75,32 @@ function applicationIntakeMonth(value) {
   return applicationIntakeMonths.find((item) => String(value || '').toLowerCase().includes(item.toLowerCase())) || intakeMonth(value);
 }
 
-function applicationAck(application, index) {
-  const numeric = String(application.id || '').replace(/\D/g, '').slice(-4).padStart(4, '0');
-  return `${numeric || String(index + 1).padStart(4, '0')}/26-27`;
+function applicationReference(application) {
+  return application.application_code || String(application.id || '').slice(0, 8).toUpperCase() || 'Unassigned';
 }
 
 function applicationYear(application) {
-  const match = String(application.intake || application.updated_at || '').match(/20\d{2}/);
-  return match?.[0] || '2026';
+  return String(application.intake || '').match(/20\d{2}/)?.[0] || '';
 }
 
 function applicationUpdatedDate(application) {
-  return new Date(application.updated_at || '2026-05-22T00:00:00Z');
+  const value = application.updated_at || application.created_at;
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function matchesUpdatedDate(application, dateFilter) {
+  if (!dateFilter) return true;
+  const date = applicationUpdatedDate(application);
+  if (!date) return false;
+  const localDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  return localDate === dateFilter;
+}
+
+function selectVisibleApplication(filtered, applications, selectedId) {
+  if (selectedId && !applications.some((application) => application.id === selectedId)) return undefined;
+  return filtered.find((application) => application.id === selectedId) || filtered[0];
 }
 
 function matchesApplicationIntake(application, intake) {
@@ -102,12 +108,18 @@ function matchesApplicationIntake(application, intake) {
   return String(application.intake || '').toLowerCase().includes(intake.toLowerCase());
 }
 
+function csvCell(value) {
+  const text = String(value ?? '');
+  const safeText = /^[\s]*[=+@-]/.test(text) || /^[\t\r\n]/.test(text) ? `'${text}` : text;
+  return `"${safeText.replace(/"/g, '""')}"`;
+}
+
 function downloadApplications(filename, rows, students) {
-  const header = ['Ack No', 'Student', 'University', 'Program', 'Country', 'Intake', 'Status', 'Fee Status', 'Deposit Status'];
-  const body = rows.map((application, index) => {
+  const header = ['Application ID', 'Student', 'University', 'Program', 'Country', 'Intake', 'Status', 'Fee Status', 'Deposit Status'];
+  const body = rows.map((application) => {
     const student = students.find((item) => item.id === application.student_id);
     return [
-      applicationAck(application, index),
+      application.id,
       student ? `${student.first_name} ${student.last_name}` : '',
       application.university,
       application.course,
@@ -116,9 +128,9 @@ function downloadApplications(filename, rows, students) {
       labelFor(application.status),
       labelFor(application.fee_status),
       labelFor(application.deposit_status),
-    ].map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`).join(',');
+    ].map(csvCell).join(',');
   });
-  const blob = new Blob([[header.map((value) => `"${value}"`).join(','), ...body].join('\n')], { type: 'text/csv;charset=utf-8' });
+  const blob = new Blob(['\uFEFF', [header.map(csvCell).join(','), ...body].join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
@@ -137,16 +149,16 @@ function studentOptionLabel(student) {
 function findStudentFromInput(value, students) {
   const normalizedValue = String(value || '').trim().toLowerCase();
   if (!normalizedValue) return null;
-  return students.find((student) => {
+  const exactMatch = students.find((student) => [studentOptionLabel(student), student.email, student.student_code].some((item) => String(item || '').toLowerCase() === normalizedValue));
+  if (exactMatch) return exactMatch;
+  const nameMatches = students.filter((student) => {
     const fullName = `${student.first_name} ${student.last_name}`.trim().toLowerCase();
-    const label = studentOptionLabel(student).toLowerCase();
-    const email = String(student.email || '').toLowerCase();
-    const code = String(student.student_code || '').toLowerCase();
-    return [label, fullName, email, code].includes(normalizedValue);
-  }) || null;
+    return fullName === normalizedValue;
+  });
+  return nameMatches.length === 1 ? nameMatches[0] : null;
 }
 
-export function Applications() {
+export function Applications({ initialQuery = '', initialApplicationId = '' }) {
   const {
     addApplication,
     addApplicationNote,
@@ -161,16 +173,18 @@ export function Applications() {
   } = useAppState();
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery);
   const [statusFilter, setStatusFilter] = useState('All');
   const [countryFilter, setCountryFilter] = useState('All');
   const [universityFilter, setUniversityFilter] = useState('All');
   const [intakeFilter, setIntakeFilter] = useState('All');
   const [yearFilter, setYearFilter] = useState('All');
-  const [deadlineType, setDeadlineType] = useState('All');
-  const [deadlineDate, setDeadlineDate] = useState('');
-  const [selectedApplicationId, setSelectedApplicationId] = useState(visibleApplications[0]?.id || '');
-  const [noteBody, setNoteBody] = useState('');
+  const [updatedDateFilter, setUpdatedDateFilter] = useState('');
+  const [selectedApplicationId, setSelectedApplicationId] = useState(initialApplicationId || visibleApplications[0]?.id || '');
+  const [noteDrafts, setNoteDrafts] = useState({});
+  const [noteSubmitting, setNoteSubmitting] = useState(false);
+  const [statusSubmitting, setStatusSubmitting] = useState(false);
+  const [actionError, setActionError] = useState('');
   const [form, setForm] = useState({
     student_id: visibleStudents[0]?.id || '',
     university: '',
@@ -184,7 +198,8 @@ export function Applications() {
   const countries = useMemo(() => ['All', ...new Set(visibleApplications.map((application) => application.country).filter(Boolean).sort())], [visibleApplications]);
   const universities = useMemo(() => ['All', ...new Set(visibleApplications.map((application) => application.university).filter(Boolean).sort())], [visibleApplications]);
   const intakeChoices = useMemo(() => ['All', ...new Set([...intakeOptions, ...visibleApplications.map((application) => applicationIntakeMonth(application.intake))])], [visibleApplications]);
-  const yearChoices = useMemo(() => ['All', ...new Set(visibleApplications.map(applicationYear).sort())], [visibleApplications]);
+  const yearChoices = useMemo(() => ['All', ...new Set(visibleApplications.map(applicationYear).filter(Boolean).sort())], [visibleApplications]);
+  const commissionTotals = useMemo(() => summarizeCommissions(visibleCommissions), [visibleCommissions]);
 
   const filteredApplications = useMemo(() => visibleApplications.filter((application) => {
     if (statusFilter !== 'All' && application.status !== statusFilter) return false;
@@ -192,14 +207,16 @@ export function Applications() {
     if (universityFilter !== 'All' && application.university !== universityFilter) return false;
     if (!matchesApplicationIntake(application, intakeFilter)) return false;
     if (yearFilter !== 'All' && applicationYear(application) !== yearFilter) return false;
-    if (deadlineDate && !String(application.updated_at || '').includes(deadlineDate)) return false;
-    if (deadlineType !== 'All' && !String(application.status || '').toLowerCase().includes(deadlineType.split(' ')[0].toLowerCase())) return false;
+    if (!matchesUpdatedDate(application, updatedDateFilter)) return false;
     const student = visibleStudents.find((item) => item.id === application.student_id);
-    const haystack = `${student?.first_name} ${student?.last_name} ${application.university} ${application.course} ${application.country}`.toLowerCase();
-    return haystack.includes(query.toLowerCase());
-  }), [countryFilter, deadlineDate, deadlineType, intakeFilter, query, statusFilter, universityFilter, visibleApplications, visibleStudents, yearFilter]);
+    const haystack = `${student?.first_name} ${student?.last_name} ${student?.email || ''} ${student?.student_code || ''} ${application.id} ${application.university} ${application.course} ${application.country}`.toLowerCase();
+    return haystack.includes(query.trim().toLowerCase());
+  }), [countryFilter, updatedDateFilter, intakeFilter, query, statusFilter, universityFilter, visibleApplications, visibleStudents, yearFilter]);
 
-  const selectedApplication = filteredApplications.find((application) => application.id === selectedApplicationId) || filteredApplications[0];
+  const selectedApplication = selectVisibleApplication(filteredApplications, visibleApplications, selectedApplicationId);
+  const unavailableSelection = Boolean(selectedApplicationId && !visibleApplications.some((application) => application.id === selectedApplicationId));
+  const noteBody = noteDrafts[selectedApplication?.id] || '';
+  const hasFilters = Boolean(query || updatedDateFilter || [statusFilter, countryFilter, universityFilter, intakeFilter, yearFilter].some((value) => value !== 'All'));
   const selectedStudent = selectedApplication
     ? visibleStudents.find((student) => student.id === selectedApplication.student_id)
     : null;
@@ -235,6 +252,21 @@ export function Applications() {
     && !partnerWaitingForAdmin;
   const hasSubmittedDocuments = submittedDocuments > 0;
 
+  function clearFilters() {
+    setQuery('');
+    setStatusFilter('All');
+    setCountryFilter('All');
+    setUniversityFilter('All');
+    setIntakeFilter('All');
+    setYearFilter('All');
+    setUpdatedDateFilter('');
+  }
+
+  function selectApplication(id) {
+    setSelectedApplicationId(id);
+    setActionError('');
+  }
+
   function openApplicationModal(nextFields = {}) {
     const selectedFormStudent = visibleStudents.find((student) => student.id === form.student_id) || visibleStudents[0];
     setForm({
@@ -262,16 +294,22 @@ export function Applications() {
 
   async function handleSubmit(event) {
     event.preventDefault();
+    if (submitting) return;
     setFormError('');
     const chosenStudent = visibleStudents.find((student) => student.id === form.student_id) || findStudentFromInput(studentSearch, visibleStudents);
     if (!chosenStudent) {
-      setFormError('Select an existing student from the suggestions, or create the student in Intake first.');
+      setFormError('Select an existing student by email or student code, or create their file in Students first.');
+      return;
+    }
+    if (![form.university, form.country, form.course].every((value) => value.trim())) {
+      setFormError('Enter a university, country, and course.');
       return;
     }
     setSubmitting(true);
     try {
-      const nextApplication = await addApplication({ ...form, student_id: chosenStudent.id });
+      const nextApplication = await addApplication({ ...form, university: form.university.trim(), country: form.country.trim(), course: form.course.trim(), student_id: chosenStudent.id });
       setSelectedApplicationId(nextApplication.id);
+      clearFilters();
       setOpen(false);
     } catch (error) {
       setFormError(error?.message || 'Could not create this application.');
@@ -282,14 +320,44 @@ export function Applications() {
 
   async function handleNoteSubmit(event) {
     event.preventDefault();
-    if (!selectedApplication || !noteBody.trim()) return;
-    await addApplicationNote(selectedApplication.id, noteBody.trim());
-    setNoteBody('');
+    if (!selectedApplication || !noteBody.trim() || noteSubmitting) return;
+    const applicationId = selectedApplication.id;
+    setNoteSubmitting(true);
+    setActionError('');
+    try {
+      await addApplicationNote(applicationId, noteBody.trim());
+      setNoteDrafts((current) => ({ ...current, [applicationId]: '' }));
+    } catch (error) {
+      setActionError(error?.message || 'Could not save your comment. Your draft is still here.');
+    } finally {
+      setNoteSubmitting(false);
+    }
   }
 
   async function handleSendToAdmin() {
-    if (!selectedApplication || !hasSubmittedDocuments) return;
-    await updateApplicationStatus(selectedApplication.id, 'ready_for_admin_review').catch(() => {});
+    if (!selectedApplication || !hasSubmittedDocuments || statusSubmitting) return;
+    setStatusSubmitting(true);
+    setActionError('');
+    try {
+      await updateApplicationStatus(selectedApplication.id, 'ready_for_admin_review');
+    } catch (error) {
+      setActionError(error?.message || 'Could not send this application for review. Please try again.');
+    } finally {
+      setStatusSubmitting(false);
+    }
+  }
+
+  async function handleStatusChange(status) {
+    if (!selectedApplication || statusSubmitting) return;
+    setStatusSubmitting(true);
+    setActionError('');
+    try {
+      await updateApplicationStatus(selectedApplication.id, status);
+    } catch (error) {
+      setActionError(error?.message || 'Could not update this application. Please try again.');
+    } finally {
+      setStatusSubmitting(false);
+    }
   }
 
   return (
@@ -297,10 +365,10 @@ export function Applications() {
       <div className="page-heading">
         <div>
           <h1>Applications</h1>
-          <p>Reference-style workspace for requirements, comments, payments, university submission, and partner visibility.</p>
+          <p>Move each application forward with clear requirements, shared notes, and progress you can trust.</p>
         </div>
         <div className="heading-actions">
-          <button className="secondary-button" type="button" onClick={() => downloadApplications('bizzlo-application-data.csv', filteredApplications, visibleStudents)}>
+          <button className="secondary-button" type="button" disabled={filteredApplications.length === 0} onClick={() => downloadApplications('bizzlo-application-data.csv', filteredApplications, visibleStudents)}>
             <Download size={17} />
             Export Application Data
           </button>
@@ -313,12 +381,12 @@ export function Applications() {
 
       <div className="app-metrics">
         <section>
-          <span>Open applications</span>
+          <span>Total applications</span>
           <strong>{visibleApplications.length}</strong>
         </section>
         <section>
           <span>Admin review</span>
-          <strong>{visibleApplications.filter((item) => item.status === 'pending_admin_review').length}</strong>
+          <strong>{visibleApplications.filter((item) => adminReviewStatuses.has(item.status)).length}</strong>
         </section>
         <section>
           <span>Offers</span>
@@ -326,7 +394,7 @@ export function Applications() {
         </section>
         <section>
           <span>Commission pipeline</span>
-          <strong>{money(visibleCommissions.reduce((sum, item) => sum + Number(item.expected_amount || 0), 0), visibleCommissions[0]?.currency || 'INR')}</strong>
+          <strong>{commissionTotals.map((group) => `${group.count === group.missingAmounts ? `${group.currency}: amount not recorded` : money(group.amount, group.currency)}${group.missingAmounts > 0 && group.count !== group.missingAmounts ? ' + unrecorded amounts' : ''}`).join(' · ') || 'Not recorded'}</strong>
         </section>
       </div>
 
@@ -334,7 +402,7 @@ export function Applications() {
         <div className="toolbar application-filter-bar">
           <div className="search-box">
             <Send size={17} />
-            <input placeholder="Search student, university, course..." value={query} onChange={(event) => setQuery(event.target.value)} />
+            <input aria-label="Search applications" placeholder="Search student, university, course..." value={query} onChange={(event) => setQuery(event.target.value)} />
           </div>
           <SelectInput label="Country" value={countryFilter} onChange={(event) => setCountryFilter(event.target.value)}>
             {countries.map((country) => <option key={country}>{country}</option>)}
@@ -352,26 +420,26 @@ export function Applications() {
             <option>All</option>
             {adminStatuses.map((status) => <option key={status} value={status}>{labelFor(status)}</option>)}
           </SelectInput>
-          <SelectInput label="Deadline type" value={deadlineType} onChange={(event) => setDeadlineType(event.target.value)}>
-            {deadlineTypes.map((type) => <option key={type}>{type}</option>)}
-          </SelectInput>
-          <TextInput label="Deadline date" type="date" value={deadlineDate} onChange={(event) => setDeadlineDate(event.target.value)} />
+          <TextInput label="Updated on" type="date" value={updatedDateFilter} onChange={(event) => setUpdatedDateFilter(event.target.value)} />
+          {hasFilters ? <button className="secondary-button" type="button" onClick={clearFilters}>Clear filters</button> : null}
         </div>
       </Panel>
 
       <div className="application-workspace">
-        <Panel title="Application Queue" description="List/detail layout like a serious admissions desk.">
+        <Panel title="Application Queue" description={`${filteredApplications.length} of ${visibleApplications.length} applications · Select a file to review its next step.`}>
           <div className="application-list">
+            {filteredApplications.length === 0 ? <EmptyState icon={Send} title={hasFilters ? 'No matching applications' : 'Start your first application'} text={hasFilters ? 'Clear a filter or try a different student, university, or course.' : 'Choose a student and a program to start tracking their progress.'} /> : null}
             {filteredApplications.map((application) => {
               const student = visibleStudents.find((item) => item.id === application.student_id);
-              const docs = visibleDocuments.filter((document) => document.student_id === application.student_id);
-              const approved = requiredDocuments.filter((type) => docs.some((document) => document.type === type && document.status === 'approved')).length;
+              const docs = visibleDocuments.filter((document) => document.application_id === application.id || (!document.application_id && document.student_id === application.student_id));
+              const approved = requiredDocuments.filter((type) => documentForType(docs, type)?.status === 'approved').length;
               return (
                 <button
                   className={application.id === selectedApplication?.id ? 'application-row active' : 'application-row'}
                   key={application.id}
                   type="button"
-                  onClick={() => setSelectedApplicationId(application.id)}
+                  aria-pressed={application.id === selectedApplication?.id}
+                  onClick={() => selectApplication(application.id)}
                 >
                   <div>
                     <strong>{student?.first_name} {student?.last_name}</strong>
@@ -389,7 +457,7 @@ export function Applications() {
         </Panel>
 
         <Panel
-          title={selectedApplication ? `${selectedApplication.university}` : 'Application Detail'}
+          title={selectedApplication ? `${selectedApplication.university}` : unavailableSelection ? 'Application unavailable' : 'Application Detail'}
           description={selectedApplication ? `${selectedApplication.course} · ${selectedApplication.country}` : 'Select an application to inspect requirements.'}
           className="application-detail-panel"
         >
@@ -404,7 +472,7 @@ export function Applications() {
                 {adminUser ? (
                   <label className="field compact-select">
                     <span>Status</span>
-                    <select value={selectedApplication.status} onChange={(event) => updateApplicationStatus(selectedApplication.id, event.target.value).catch(() => {})}>
+                    <select value={selectedApplication.status} disabled={statusSubmitting} onChange={(event) => handleStatusChange(event.target.value)}>
                       {statusOptions.map((status) => <option key={status} value={status}>{labelFor(status)}</option>)}
                     </select>
                   </label>
@@ -413,9 +481,9 @@ export function Applications() {
                     <span>Current stage</span>
                     <StatusBadge value={selectedApplication.status} />
                     {canPartnerSendToAdmin ? (
-                      <button className="primary-button" type="button" disabled={!hasSubmittedDocuments} onClick={handleSendToAdmin}>
+                      <button className="primary-button" type="button" disabled={!hasSubmittedDocuments || statusSubmitting} onClick={handleSendToAdmin}>
                         <Send size={16} />
-                        Send to admin
+                        {statusSubmitting ? 'Sending…' : 'Send to admin'}
                       </button>
                     ) : null}
                     {partnerWaitingForAdmin ? <small>Submitted to Videshway admin for decision.</small> : null}
@@ -424,6 +492,7 @@ export function Applications() {
                   </div>
                 )}
               </div>
+              {actionError ? <p className="form-error" role="alert">{actionError}</p> : null}
 
               <div className="stage-track">
                 {applicationStages.map((stage, index) => {
@@ -502,10 +571,11 @@ export function Applications() {
                   <MessageSquarePlus size={18} />
                 </div>
                 <form className="note-form" onSubmit={handleNoteSubmit}>
-                  <textarea placeholder="Add an internal comment or instruction..." value={noteBody} onChange={(event) => setNoteBody(event.target.value)} />
-                  <button className="secondary-button" type="submit">Add comment</button>
+                  <textarea aria-label="Application comment" placeholder="Add an internal comment or instruction..." disabled={noteSubmitting} value={noteBody} onChange={(event) => setNoteDrafts((current) => ({ ...current, [selectedApplication.id]: event.target.value }))} />
+                  <button className="secondary-button" type="submit" disabled={noteSubmitting || !noteBody.trim()}>{noteSubmitting ? 'Saving…' : 'Add comment'}</button>
                 </form>
                 <div className="note-list">
+                  {selectedNotes.length === 0 ? <p className="muted-copy">No comments yet. Add the next step so your team stays aligned.</p> : null}
                   {selectedNotes.map((note) => (
                     <article key={note.id}>
                       <strong>{note.author_name}</strong>
@@ -517,53 +587,54 @@ export function Applications() {
               </section>
             </div>
           ) : (
-            <p className="muted-copy">No applications match the current filter.</p>
+            <p className="muted-copy">{unavailableSelection ? 'This application is no longer available to your account. Select another file from the queue.' : 'No applications match the current filter.'}</p>
           )}
         </Panel>
       </div>
 
-      <Panel title="Operations Table" description="Application grid for acknowledgement number, filters, status, and team ownership.">
+      <Panel title="All application details" description="References, study plans, and current progress for the selected filters.">
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Ack. No.</th>
-                <th>Date Created</th>
+                <th>Reference</th>
+                <th>Last updated</th>
                 <th>Student</th>
                 <th>University</th>
                 <th>Program</th>
                 <th>Intake</th>
                 <th>Status</th>
-                <th>Assignee</th>
+                <th>Fee status</th>
               </tr>
             </thead>
             <tbody>
-              {filteredApplications.map((application, index) => {
+              {filteredApplications.map((application) => {
                 const student = visibleStudents.find((item) => item.id === application.student_id);
                 const updatedDate = applicationUpdatedDate(application);
                 return (
                   <tr key={`table-${application.id}`}>
                     <td>
-                      <button className="table-link-button" type="button" onClick={() => setSelectedApplicationId(application.id)}>
-                        {applicationAck(application, index)}
+                      <button className="table-link-button" type="button" title={application.id} onClick={() => selectApplication(application.id)}>
+                        {applicationReference(application)}
                       </button>
                     </td>
-                    <td>{updatedDate.toLocaleDateString()}<small>{updatedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small></td>
+                    <td>{updatedDate ? updatedDate.toLocaleDateString() : 'Not recorded'}{updatedDate ? <small>{updatedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small> : null}</td>
                     <td>{student?.first_name} {student?.last_name}<small>{student?.student_code}</small></td>
                     <td>{application.university}<small>{application.country}</small></td>
                     <td>{application.course}</td>
                     <td>{application.intake}</td>
                     <td><StatusBadge value={application.status} /></td>
-                    <td>{adminUser ? 'Videshway Admin' : currentUser.name}<small>{labelFor(application.fee_status)} fee</small></td>
+                    <td><StatusBadge value={application.fee_status} /></td>
                   </tr>
                 );
               })}
+              {filteredApplications.length === 0 ? <tr><td colSpan={8}><p className="muted-copy">No applications to display.</p></td></tr> : null}
             </tbody>
           </table>
         </div>
       </Panel>
 
-      <Panel title="Fast Create From Program Search" description="Build one student into multiple university applications from the partner catalogue.">
+      <Panel title="Start from a program" description="Choose a course from the partner catalogue, then attach a student to begin.">
         <div className="course-mini-grid">
           {courses.slice(0, 3).map((course) => (
             <button className="course-mini" type="button" key={course.id} onClick={() => fromCourse(course)}>
@@ -575,7 +646,7 @@ export function Applications() {
         </div>
       </Panel>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="Create Application" description="Attach one student to one course and start the document/admin workflow.">
+      <Modal open={open} onClose={() => { if (!submitting) setOpen(false); }} title="Create Application" description="Attach one student to one course and start the document/admin workflow.">
         <form className="form-grid" onSubmit={handleSubmit}>
           <label className="field">
             <span>Student</span>
@@ -604,9 +675,9 @@ export function Applications() {
           <SelectInput label="Intake" required value={form.intake} onChange={(event) => setForm({ ...form, intake: event.target.value })}>
             {intakeOptions.map((item) => <option key={item}>{item}</option>)}
           </SelectInput>
-          {formError ? <p className="form-error form-wide">{formError}</p> : null}
+          {formError ? <p className="form-error form-wide" role="alert">{formError}</p> : null}
           <footer className="form-footer">
-            <button className="secondary-button" type="button" onClick={() => setOpen(false)}>Cancel</button>
+            <button className="secondary-button" type="button" disabled={submitting} onClick={() => setOpen(false)}>Cancel</button>
             <button className="primary-button" type="submit" disabled={submitting}>{submitting ? 'Creating...' : 'Create application'}</button>
           </footer>
         </form>

@@ -17,7 +17,7 @@ test('AuthScreen submits credentials through signIn', async () => {
   assert.match(source, /await signIn\(form\.email, form\.password\)/);
   assert.match(source, /Username or email/);
   assert.match(source, /type="text"/);
-  assert.match(source, /type="password"/);
+  assert.match(source, /type=\{showPassword \? 'text' : 'password'\}/);
 });
 
 test('AuthScreen exposes password reset through resetPassword', async () => {
