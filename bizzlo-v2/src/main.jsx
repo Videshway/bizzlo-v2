@@ -4,6 +4,7 @@ import App from './App.jsx';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 import { initTelemetry } from './lib/telemetry';
 import './styles.css';
+import './experience.css';
 
 initTelemetry();
 

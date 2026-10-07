@@ -1,20 +1,25 @@
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { AuthScreen } from './components/AuthScreen';
 import { CookieConsent } from './components/CookieConsent';
 import { Shell } from './components/Shell';
+import { RouteLoading } from './components/RouteLoading';
 import { AppStateProvider, useAppState } from './lib/appState';
-import { Audit } from './pages/Audit';
-import { Applications } from './pages/Applications';
-import { Commissions } from './pages/Commissions';
-import { CourseFinder } from './pages/CourseFinder';
+import { buildWorkspaceRoute, resolveWorkspaceRoute } from './lib/workspaceRoutes';
 import { Dashboard } from './pages/Dashboard';
-import { Documents } from './pages/Documents';
-import { PrivacyPolicy, TermsOfService } from './pages/Legal';
-import { Support } from './pages/StaticInfo';
-import { StudentPortal } from './pages/StudentPortal';
-import { StudentSelfServiceApp } from './pages/StudentSelfService';
-import { Students } from './pages/Students';
-import { Team } from './pages/Team';
+
+const Audit = lazy(() => import('./pages/Audit').then((module) => ({ default: module.Audit })));
+const Applications = lazy(() => import('./pages/Applications').then((module) => ({ default: module.Applications })));
+const Commissions = lazy(() => import('./pages/Commissions').then((module) => ({ default: module.Commissions })));
+const CourseFinder = lazy(() => import('./pages/CourseFinder').then((module) => ({ default: module.CourseFinder })));
+const Documents = lazy(() => import('./pages/Documents').then((module) => ({ default: module.Documents })));
+const Support = lazy(() => import('./pages/StaticInfo').then((module) => ({ default: module.Support })));
+const StudentPortal = lazy(() => import('./pages/StudentPortal').then((module) => ({ default: module.StudentPortal })));
+const StudentSelfServiceApp = lazy(() => import('./pages/StudentSelfService').then((module) => ({ default: module.StudentSelfServiceApp })));
+const Students = lazy(() => import('./pages/Students').then((module) => ({ default: module.Students })));
+const Team = lazy(() => import('./pages/Team').then((module) => ({ default: module.Team })));
+const Tasks = lazy(() => import('./pages/Tasks').then((module) => ({ default: module.Tasks })));
+const PrivacyPolicy = lazy(() => import('./pages/Legal').then((module) => ({ default: module.PrivacyPolicy })));
+const TermsOfService = lazy(() => import('./pages/Legal').then((module) => ({ default: module.TermsOfService })));
 
 function NotFound({ onNavigate }) {
   return (
@@ -37,6 +42,7 @@ const pages = {
   students: Students,
   applications: Applications,
   documents: Documents,
+  tasks: Tasks,
   courses: CourseFinder,
   team: Team,
   commissions: Commissions,
@@ -48,38 +54,12 @@ const pages = {
   terms: TermsOfService,
 };
 
-const pagePaths = {
-  dashboard: '/',
-  students: '/students',
-  applications: '/applications',
-  documents: '/documents',
-  courses: '/program-search',
-  team: '/team',
-  commissions: '/finance',
-  support: '/support',
-  audit: '/audit',
-  studentPortal: '/student-link',
-  privacy: '/legal/privacy',
-  terms: '/legal/terms',
-};
-
-const pathPages = Object.fromEntries(Object.entries(pagePaths).map(([page, path]) => [path, page]));
-
 function routeFromLocation() {
-  const { pathname, search } = window.location;
-  const inviteMatch = pathname.match(/^\/invite\/([^/]+)\/?$/);
-  if (inviteMatch) {
-    const params = new URLSearchParams(search);
-    params.set('invite', decodeURIComponent(inviteMatch[1]));
-    window.history.replaceState({}, '', `/student-link?${params.toString()}`);
-    return 'studentPortal';
+  const route = resolveWorkspaceRoute(window.location.pathname, window.location.search);
+  if (window.location.pathname + window.location.search !== route.path) {
+    window.history.replaceState({}, '', route.path);
   }
-  const normalized = pathname.replace(/\/$/, '') || '/';
-  if (['/login', '/auth/login', '/dashboard'].includes(normalized)) {
-    window.history.replaceState({}, '', '/');
-    return 'dashboard';
-  }
-  return pathPages[normalized] || 'notFound';
+  return route;
 }
 
 function BizzloApp() {
@@ -89,30 +69,30 @@ function BizzloApp() {
     activeInviteUrl,
     visibleStudents,
   } = useAppState();
-  const [activePage, setActivePage] = useState(routeFromLocation);
+  const [route, setRoute] = useState(routeFromLocation);
+  const activePage = route.page;
+  const routeParams = new URLSearchParams(route.search);
   const Page = pages[activePage] || Dashboard;
 
   const navigate = useCallback((page, options = {}) => {
-    const path = options.path || pagePaths[page] || '/';
-    if (window.location.pathname + window.location.search !== path) {
-      window.history.pushState({ page }, '', path);
+    const destination = buildWorkspaceRoute(page, options, window.location.origin);
+    if (window.location.pathname + window.location.search !== destination.path) {
+      window.history.pushState({ page: destination.page }, '', destination.path);
     }
-    setActivePage(page);
+    setRoute(destination);
   }, []);
 
   useEffect(() => {
-    const handlePopState = () => setActivePage(routeFromLocation());
+    const handlePopState = () => setRoute(routeFromLocation());
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
   useEffect(() => {
-    const inviteFromQuery = new URLSearchParams(window.location.search).get('invite');
-    const match = window.location.pathname.match(/^\/invite\/([^/]+)\/?$/);
-    const inviteCode = inviteFromQuery || (match ? match[1] : '');
+    const inviteCode = new URLSearchParams(route.search).get('invite');
     if (!inviteCode) return;
 
-    const code = decodeURIComponent(inviteCode).toLowerCase();
+    const code = inviteCode.toLowerCase();
     const student = visibleStudents.find((item) => (
       String(item.student_code || '').toLowerCase() === code
       || String(item.id).toLowerCase() === code
@@ -120,16 +100,25 @@ function BizzloApp() {
 
     if (student) {
       setActiveInviteStudentId(student.id);
-      const token = new URLSearchParams(window.location.search).get('token');
-      if (!activeInviteUrl || !activeInviteUrl.includes('/portal/')) {
-        setActiveInviteUrl(`${window.location.origin}/portal/${encodeURIComponent(String(student.student_code || student.id).toLowerCase())}${token ? `?token=${encodeURIComponent(token)}` : ''}`);
+      const token = new URLSearchParams(route.search).get('token');
+      const portalPath = `/portal/${encodeURIComponent(String(student.student_code || student.id).toLowerCase())}`;
+      const existingInvite = activeInviteUrl ? new URL(activeInviteUrl, window.location.origin) : null;
+      if (existingInvite?.pathname !== portalPath || (token && existingInvite.searchParams.get('token') !== token)) {
+        setActiveInviteUrl(`${window.location.origin}${portalPath}${token ? `?token=${encodeURIComponent(token)}` : ''}`);
       }
     }
-  }, [activeInviteUrl, setActiveInviteStudentId, setActiveInviteUrl, visibleStudents]);
+  }, [activeInviteUrl, route.search, setActiveInviteStudentId, setActiveInviteUrl, visibleStudents]);
 
   return (
     <Shell activePage={activePage} onNavigate={navigate}>
-      <Page onNavigate={navigate} />
+      <Suspense key={`${activePage}${route.search}`} fallback={<RouteLoading label="workspace" />}>
+        <Page
+          onNavigate={navigate}
+          initialQuery={routeParams.get('q') || ''}
+          initialStudentId={routeParams.get('studentId') || ''}
+          initialApplicationId={routeParams.get('applicationId') || ''}
+        />
+      </Suspense>
     </Shell>
   );
 }
@@ -141,7 +130,7 @@ function AppRuntime() {
   if (!isDemoMode && !currentUser && inviteMatch) {
     const target = `/portal/${inviteMatch[1]}${window.location.search}`;
     window.history.replaceState({}, '', target);
-    return <StudentSelfServiceApp />;
+    return <Suspense fallback={<RouteLoading label="student portal" />}><StudentSelfServiceApp /></Suspense>;
   }
 
   if (isProductionMisconfigured) {
@@ -176,13 +165,13 @@ function AppRuntime() {
 
 export default function App() {
   if (/^\/portal\/[^/]+\/?$/.test(window.location.pathname)) {
-    return <StudentSelfServiceApp />;
+    return <Suspense fallback={<RouteLoading label="student portal" />}><StudentSelfServiceApp /></Suspense>;
   }
 
   if (window.location.pathname === '/legal/privacy') {
     return (
       <>
-        <PrivacyPolicy />
+        <Suspense fallback={<RouteLoading label="privacy policy" />}><PrivacyPolicy /></Suspense>
         <CookieConsent />
       </>
     );
@@ -191,7 +180,7 @@ export default function App() {
   if (window.location.pathname === '/legal/terms') {
     return (
       <>
-        <TermsOfService />
+        <Suspense fallback={<RouteLoading label="terms of service" />}><TermsOfService /></Suspense>
         <CookieConsent />
       </>
     );
